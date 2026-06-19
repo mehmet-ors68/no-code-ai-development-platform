@@ -40,7 +40,14 @@ app.use('/api/models', modelsRoutes);
 app.use('/api/process', processRoutes);
 
 // Health check endpoint for Render
+/*
 app.get('/healthz', (req, res) => {
+  res.status(200).send('OK');
+});
+*/
+app.get('/healthz', (req, res) => {
+    console.log(`Request received from IP: ${req.ip}`);
+
   res.status(200).send('OK');
 });
 

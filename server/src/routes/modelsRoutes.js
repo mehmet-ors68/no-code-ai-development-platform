@@ -10,7 +10,7 @@ router.get("/", authenticateUser, async (req, res) => {
   res.json(cases);
 });
 
-  
+
 // POST create a new model
 router.post('/', authenticateUser, async (req, res) => {
   const { title, description, status } = req.body;

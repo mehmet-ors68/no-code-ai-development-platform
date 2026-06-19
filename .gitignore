@@ -1,3 +1,33 @@
 claude.txt
 shortcuts.txt
 todo list.txt
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# Environment files (never commit secrets)
+.env
+.env.local
+.env.production
+
+# Go compiled binaries
+go-auth-service/server
+go-gateway/server
+java-service/server
+*.exe
+
+# Java / Maven
+java-service/target/
+*.class
+*.jar
+
+# Python
+python-ml-service/__pycache__/
+python-ml-service/*.pyc
+python-ml-service/venv/
+python-ml-service/.venv/
+
+# OS
+.DS_Store
+Thumbs.db
