@@ -24,6 +24,8 @@ func main() {
 	pythonURL := os.Getenv("PYTHON_SERVICE_URL")
 
 	r := gin.Default()
+	// Trust only loopback (dev) and Docker internal network (172.16-31.x, 10.x)
+	r.SetTrustedProxies([]string{"127.0.0.1", "::1", "172.16.0.0/12", "10.0.0.0/8"})
 	r.Use(corsMiddleware())
 
 	// Public routes — no JWT check (login / register handled by Java)
