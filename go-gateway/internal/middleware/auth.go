@@ -12,20 +12,24 @@ import (
 // On success it sets "userID" in the Gin context so the proxy can forward it downstream.
 func RequireAuth(c *gin.Context) {
 	tokenStr, err := c.Cookie("token")
+
 	if err != nil {
 		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"message": "No token found"})
+
 		return
 	}
 
 	token, err := jwt.Parse(tokenStr, func(t *jwt.Token) (any, error) {
 		return []byte(os.Getenv("JWT_SECRET")), nil
 	})
+
 	if err != nil || !token.Valid {
 		c.AbortWithStatusJSON(http.StatusForbidden, gin.H{"message": "Invalid or expired token"})
+
 		return
 	}
 
-	claims := token.Claims.(jwt.MapClaims)
+		 := token.Claims.(jwt.MapClaims)
 	c.Set("userID", claims["id"])
 	c.Next()
 }
