@@ -14,6 +14,7 @@ import org.springframework.web.bind.annotation.*;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.HashMap;
 
 // Node.js equivalent: routes/models.js
 // X-User-ID is injected by Go Gateway after JWT validation — no JWT re-parsing here
@@ -42,7 +43,9 @@ public class ModelController {
         model.setUserId(userId);
         DlModel saved = dlModelRepository.save(model);
 
-        modelInfoRepository.save(buildDefaultModelInfo(saved.getId()));
+        ModelInfo info = new ModelInfo();
+        info.setModelId(saved.getId());
+        modelInfoRepository.save(info);
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(Map.of("modelId", saved.getId(), "message", "Model created"));
@@ -78,32 +81,4 @@ public class ModelController {
         return ResponseEntity.ok(Map.of("message", "Model deleted"));
     }
 
-    // Mirrors createDefaultModelInfo() in Node.js modelInfoModel.js
-    private ModelInfo buildDefaultModelInfo(String modelId) {
-        ModelInfo.Layer layer = new ModelInfo.Layer();
-        layer.setActivation("relu");
-        layer.setNumOfNeurons(1);
-        layer.setLr(0.01);
-        layer.setWim("XAVİER");
-        layer.setLayerType("DL");
-
-        ModelInfo.TrainingHyperparameters hp = new ModelInfo.TrainingHyperparameters();
-        hp.setLossFunction("sigmoid cross entropy");
-        hp.setOptimizer("SGD");
-        hp.setEpochNum(400);
-        hp.setMinibatchSize(64);
-
-        ModelInfo.Parameters params = new ModelInfo.Parameters();
-        params.setWeights(List.of(List.of(0.0)));
-        params.setBiases(List.of(0.0));
-
-        ModelInfo info = new ModelInfo();
-        info.setModelId(modelId);
-        info.setLayers(List.of(layer));
-        info.setParameters(List.of(params));
-        info.setTrainingHyperparameters(hp);
-        info.setInputSize(0);
-        info.setCompiled(false);
-        return info;
-    }
 }
