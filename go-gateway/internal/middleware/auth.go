@@ -29,7 +29,7 @@ func RequireAuth(c *gin.Context) {
 		return
 	}
 
-		 := token.Claims.(jwt.MapClaims)
+	claims := token.Claims.(jwt.MapClaims)
 	c.Set("userID", claims["id"])
 	c.Next()
 }
