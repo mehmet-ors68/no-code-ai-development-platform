@@ -1,0 +1,12 @@
+spring:
+  application:
+    name: java-service
+  mongodb:
+    uri: ${MONGO_URI:mongodb://localhost:27017/dl-platform}
+
+server:
+  port: 8081
+
+jwt:
+  secret: ${JWT_SECRET:dl-platform-dev-secret-key-minimum-32-chars-ok}
+  expiration-ms: 86400000
