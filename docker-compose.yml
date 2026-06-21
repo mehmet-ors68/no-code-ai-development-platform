@@ -10,7 +10,8 @@ services:
       - JAVA_SERVICE_URL=http://java-service:8081
       - PYTHON_SERVICE_URL=http://python-ml-service:8000
     depends_on:
-      - java-service
+      java-service:
+        condition: service_healthy
     networks:
       - dl-network
 
@@ -21,6 +22,12 @@ services:
     environment:
       - MONGO_URI=${MONGO_URI}
       - JWT_SECRET=${JWT_SECRET}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
     networks:
       - dl-network
 

@@ -1,5 +1,21 @@
 package com.aiplatform.javaservice.dto;
 
-// Java record: immutable DTO — constructor, getters, equals, toString otomatik
-// Node.js'te: const { email, password, name } = req.body
-public record RegisterRequest(String username, String email, String password, String name) {}
+import jakarta.validation.constraints.Email;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
+
+public record RegisterRequest(
+        @NotBlank(message = "Username is required")
+        @Size(min = 3, max = 30, message = "Username must be 3-30 characters")
+        String username,
+
+        @NotBlank(message = "Email is required")
+        @Email(message = "Invalid email format")
+        String email,
+
+        @NotBlank(message = "Password is required")
+        @Size(min = 8, message = "Password must be at least 8 characters")
+        String password,
+
+        String name
+) {}
