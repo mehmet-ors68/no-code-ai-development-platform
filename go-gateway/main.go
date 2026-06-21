@@ -30,14 +30,18 @@ func main() {
 	r.Use(corsMiddleware())
 
 	// Public routes — no JWT check (login / register handled by Java)
+	r.Any("/api/auth", proxy.To(javaURL))
 	r.Any("/api/auth/*path", proxy.To(javaURL))
 
 	// Protected routes — JWT must be valid; gateway sets X-User-ID header for downstream
 	protected := r.Group("/")
 	protected.Use(middleware.RequireAuth)
 	{
+		protected.Any("/api/models",        proxy.To(javaURL))
 		protected.Any("/api/models/*path",  proxy.To(javaURL))
+		protected.Any("/api/process",       proxy.To(javaURL))
 		protected.Any("/api/process/*path", proxy.To(javaURL))
+		protected.Any("/api/ml",            proxy.To(pythonURL))
 		protected.Any("/api/ml/*path",      proxy.To(pythonURL))
 	}
 

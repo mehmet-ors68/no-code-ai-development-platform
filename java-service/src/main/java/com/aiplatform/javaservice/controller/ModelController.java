@@ -37,13 +37,15 @@ public class ModelController {
             @RequestHeader("X-User-ID") String userId) {
 
         DlModel model = new DlModel();
+
         model.setTitle(req.title());
         model.setDescription(req.description());
         model.setStatus("created");
         model.setUserId(userId);
-        DlModel saved = dlModelRepository.save(model);
 
+        DlModel saved = dlModelRepository.save(model);
         ModelInfo info = new ModelInfo();
+
         info.setModelId(saved.getId());
         modelInfoRepository.save(info);
 
@@ -79,6 +81,7 @@ public class ModelController {
 
         dlModelRepository.deleteById(id);
         modelInfoRepository.deleteByModelId(id);
+
         return ResponseEntity.ok(Map.of("message", "Model deleted"));
     }
 
