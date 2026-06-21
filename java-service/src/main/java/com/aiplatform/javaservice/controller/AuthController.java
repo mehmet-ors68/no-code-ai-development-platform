@@ -28,8 +28,12 @@ public class AuthController {
         if (userRepository.existsByEmail(req.email())) {
             return ResponseEntity.badRequest().body(Map.of("message", "Email already in use"));
         }
+        if (userRepository.existsByUsername(req.username())) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Username already taken"));
+        }
 
         User user = new User();
+        user.setUsername(req.username());
         user.setEmail(req.email());
         user.setPassword(passwordEncoder.encode(req.password()));
         user.setName(req.name());
@@ -47,7 +51,11 @@ public class AuthController {
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody LoginRequest req, HttpServletResponse response) {
-        User user = userRepository.findByEmail(req.email()).orElse(null);
+        // Accept either email or username as identifier — like GitHub/HuggingFace
+        String id = req.identifier();
+        User user = id.contains("@")
+                ? userRepository.findByEmail(id).orElse(null)
+                : userRepository.findByUsername(id).orElse(null);
 
         if (user == null || !passwordEncoder.matches(req.password(), user.getPassword())) {
             return ResponseEntity.status(401).body(Map.of("message", "Invalid credentials"));

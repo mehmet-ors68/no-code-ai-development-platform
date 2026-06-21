@@ -1,3 +1,4 @@
 package com.aiplatform.javaservice.dto;
 
-public record LoginRequest(String email, String password) {}
+// identifier can be email or username — backend tries both
+public record LoginRequest(String identifier, String password) {}

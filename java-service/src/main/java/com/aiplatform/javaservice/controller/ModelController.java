@@ -58,6 +58,7 @@ public class ModelController {
             @RequestHeader("X-User-ID") String userId) {
 
         DlModel model = dlModelRepository.findById(id).orElse(null);
+
         if (model == null) return ResponseEntity.notFound().build();
         if (!model.getUserId().equals(userId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
 
