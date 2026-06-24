@@ -2,87 +2,167 @@ package com.aiplatform.javaservice.controller;
 
 import com.aiplatform.javaservice.dto.CreateModelRequest;
 import com.aiplatform.javaservice.dto.UpdateModelRequest;
-import com.aiplatform.javaservice.model.DlModel;
-import com.aiplatform.javaservice.model.ModelInfo;
-import com.aiplatform.javaservice.repository.DlModelRepository;
-import com.aiplatform.javaservice.repository.ModelInfoRepository;
+import com.aiplatform.javaservice.model.MlModel;
+import com.aiplatform.javaservice.model.ModelSpec;
+import com.aiplatform.javaservice.repository.ExperimentRepository;
+import com.aiplatform.javaservice.repository.MlModelRepository;
+import com.aiplatform.javaservice.repository.ModelSpecRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
 
-import java.time.Instant;
 import java.util.List;
 import java.util.Map;
-import java.util.HashMap;
+import java.util.UUID;
 
-// Node.js equivalent: routes/models.js
-// X-User-ID is injected by Go Gateway after JWT validation — no JWT re-parsing here
+// X-User-ID header is injected by Go Gateway after JWT validation — no JWT parsing here.
+// All IDs are UUID — parse from String header/path variable at the boundary.
 @RestController
 @RequestMapping("/api/models")
 @RequiredArgsConstructor
 public class ModelController {
 
-    private final DlModelRepository dlModelRepository;
-    private final ModelInfoRepository modelInfoRepository;
+    private final MlModelRepository mlModelRepository;
+    private final ModelSpecRepository modelSpecRepository;
+    private final ExperimentRepository experimentRepository;
 
+    // GET /api/models — list all models for the authenticated user (lightweight, no spec)
     @GetMapping
-    public ResponseEntity<List<DlModel>> getModels(@RequestHeader("X-User-ID") String userId) {
-        return ResponseEntity.ok(dlModelRepository.findByUserId(userId));
+    public ResponseEntity<List<MlModel>> getModels(@RequestHeader("X-User-ID") String userId) {
+        return ResponseEntity.ok(mlModelRepository.findByUserId(UUID.fromString(userId)));
     }
 
+    // GET /api/models/:id — model detail + active spec (for the detail page header)
+    @GetMapping("/{id}")
+    public ResponseEntity<?> getModel(
+            @PathVariable UUID id,
+            @RequestHeader("X-User-ID") String userId) {
+
+        MlModel model = mlModelRepository.findById(id).orElse(null);
+        if (model == null) return ResponseEntity.notFound().build();
+        if (!model.getUserId().equals(UUID.fromString(userId))) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+
+        ModelSpec activeSpec = modelSpecRepository.findByModelIdAndIsActiveTrue(id).orElse(null);
+
+        return ResponseEntity.ok(Map.of(
+                "model", model,
+                "spec", activeSpec != null ? activeSpec : Map.of()
+        ));
+    }
+
+    // POST /api/models — create model + empty spec in one transaction
     @PostMapping
     public ResponseEntity<Map<String, String>> createModel(
             @RequestBody CreateModelRequest req,
             @RequestHeader("X-User-ID") String userId) {
 
-        DlModel model = new DlModel();
-
+        MlModel model = new MlModel();
         model.setTitle(req.title());
         model.setDescription(req.description());
-        model.setStatus("created");
-        model.setUserId(userId);
+        model.setUserId(UUID.fromString(userId));
 
-        DlModel saved = dlModelRepository.save(model);
-        ModelInfo info = new ModelInfo();
+        MlModel saved = mlModelRepository.save(model);
 
-        info.setModelId(saved.getId());
-        modelInfoRepository.save(info);
+        // Create an empty spec immediately — detail page always has a spec to load
+        ModelSpec spec = new ModelSpec();
+        spec.setModel(saved);
+        spec.setModelType(req.modelType() != null ? req.modelType() : "sklearn");
+        modelSpecRepository.save(spec);
 
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(Map.of("modelId", saved.getId(), "message", "Model created"));
+                .body(Map.of("modelId", saved.getId().toString(), "message", "Model created"));
     }
 
+    // PUT /api/models/:id — update title/description only (spec is versioned separately)
     @PutMapping("/{id}")
     public ResponseEntity<?> updateModel(
-            @PathVariable String id,
+            @PathVariable UUID id,
             @RequestBody UpdateModelRequest req,
             @RequestHeader("X-User-ID") String userId) {
 
-        DlModel model = dlModelRepository.findById(id).orElse(null);
-
+        MlModel model = mlModelRepository.findById(id).orElse(null);
         if (model == null) return ResponseEntity.notFound().build();
-        if (!model.getUserId().equals(userId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        if (!model.getUserId().equals(UUID.fromString(userId))) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
 
         model.setTitle(req.title());
         model.setDescription(req.description());
-        model.setUpdatedAt(Instant.now());
-        return ResponseEntity.ok(dlModelRepository.save(model));
+        return ResponseEntity.ok(mlModelRepository.save(model));
     }
 
+    // DELETE /api/models/:id — cascade deletes specs + experiments via FK constraints
     @DeleteMapping("/{id}")
     public ResponseEntity<Map<String, String>> deleteModel(
-            @PathVariable String id,
+            @PathVariable UUID id,
             @RequestHeader("X-User-ID") String userId) {
 
-        DlModel model = dlModelRepository.findById(id).orElse(null);
+        MlModel model = mlModelRepository.findById(id).orElse(null);
         if (model == null) return ResponseEntity.notFound().build();
-        if (!model.getUserId().equals(userId)) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        if (!model.getUserId().equals(UUID.fromString(userId))) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
 
-        dlModelRepository.deleteById(id);
-        modelInfoRepository.deleteByModelId(id);
+        mlModelRepository.deleteById(id);
+        // ModelSpec and Experiment rows deleted automatically by ON DELETE CASCADE
 
         return ResponseEntity.ok(Map.of("message", "Model deleted"));
     }
 
+    // GET /api/models/:id/specs — all spec versions, newest first (for the Mimari tab version history)
+    @GetMapping("/{id}/specs")
+    public ResponseEntity<?> getSpecs(
+            @PathVariable UUID id,
+            @RequestHeader("X-User-ID") String userId) {
+
+        if (!mlModelRepository.existsByIdAndUserId(id, UUID.fromString(userId))) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        return ResponseEntity.ok(modelSpecRepository.findByModelIdOrderByVersionDesc(id));
+    }
+
+    // POST /api/models/:id/specs — save new config version
+    // Deactivates all previous versions, inserts a new spec row with version = max+1.
+    // Why a new row instead of updating in place: experiments reference spec_id as FK,
+    // so we never mutate a spec that may have already been used in a training run.
+    @PostMapping("/{id}/specs")
+    @Transactional
+    public ResponseEntity<?> saveSpec(
+            @PathVariable UUID id,
+            @RequestBody Map<String, Object> body,
+            @RequestHeader("X-User-ID") String userId) {
+
+        MlModel model = mlModelRepository.findById(id).orElse(null);
+        if (model == null) return ResponseEntity.notFound().build();
+        if (!model.getUserId().equals(UUID.fromString(userId))) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+
+        // Deactivate all existing versions before creating the new one
+        modelSpecRepository.deactivateAllByModelId(id);
+
+        int nextVersion = modelSpecRepository.findMaxVersionByModelId(id) + 1;
+
+        ModelSpec spec = new ModelSpec();
+        spec.setModel(model);
+        spec.setVersion(nextVersion);
+        spec.setIsActive(true);
+        spec.setModelType((String) body.get("modelType"));
+        spec.setDatasetPath((String) body.get("datasetPath"));
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> config = (Map<String, Object>) body.get("config");
+        spec.setConfig(config);
+
+        ModelSpec saved = modelSpecRepository.save(spec);
+        return ResponseEntity.status(HttpStatus.CREATED).body(saved);
+    }
+
+    // GET /api/models/:id/experiments — training history for the Eğitim tab
+    @GetMapping("/{id}/experiments")
+    public ResponseEntity<?> getExperiments(
+            @PathVariable UUID id,
+            @RequestHeader("X-User-ID") String userId) {
+
+        if (!mlModelRepository.existsByIdAndUserId(id, UUID.fromString(userId))) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+        return ResponseEntity.ok(experimentRepository.findByModelIdOrderByCreatedAtDesc(id));
+    }
 }

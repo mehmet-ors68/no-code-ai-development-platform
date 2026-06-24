@@ -7,8 +7,8 @@ import com.aiplatform.javaservice.repository.UserRepository;
 import com.aiplatform.javaservice.service.JwtService;
 import jakarta.servlet.http.Cookie;
 import jakarta.servlet.http.HttpServletResponse;
-import lombok.RequiredArgsConstructor;
 import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.web.bind.annotation.*;
@@ -41,18 +41,18 @@ public class AuthController {
 
         User saved = userRepository.save(user);
 
-        String token = jwtService.generate(saved.getId(), saved.getEmail());
+        // UUID → String for JWT claim — Go Gateway reads this as X-User-ID header
+        String token = jwtService.generate(saved.getId().toString(), saved.getEmail());
         setTokenCookie(response, token);
 
         return ResponseEntity.status(201).body(Map.of(
                 "message", "Registration successful",
-                "userId", saved.getId()
+                "userId", saved.getId().toString()
         ));
     }
 
     @PostMapping("/login")
     public ResponseEntity<?> login(@Valid @RequestBody LoginRequest req, HttpServletResponse response) {
-        // Accept either email or username as identifier — like GitHub/HuggingFace
         String id = req.identifier();
         User user = id.contains("@")
                 ? userRepository.findByEmail(id).orElse(null)
@@ -62,12 +62,12 @@ public class AuthController {
             return ResponseEntity.status(401).body(Map.of("message", "Invalid credentials"));
         }
 
-        String token = jwtService.generate(user.getId(), user.getEmail());
+        String token = jwtService.generate(user.getId().toString(), user.getEmail());
         setTokenCookie(response, token);
 
         return ResponseEntity.ok(Map.of(
                 "message", "Login successful",
-                "userId", user.getId()
+                "userId", user.getId().toString()
         ));
     }
 
@@ -76,17 +76,17 @@ public class AuthController {
         Cookie cookie = new Cookie("token", "");
         cookie.setHttpOnly(true);
         cookie.setPath("/");
-        cookie.setMaxAge(0);  // maxAge 0 = delete the cookie
+        cookie.setMaxAge(0);
         response.addCookie(cookie);
         return ResponseEntity.ok(Map.of("message", "Logged out"));
     }
 
     private void setTokenCookie(HttpServletResponse response, String token) {
         Cookie cookie = new Cookie("token", token);
-        cookie.setHttpOnly(true);   // JS cannot read this cookie — XSS protection
+        cookie.setHttpOnly(true);
         cookie.setPath("/");
-        cookie.setMaxAge(86400);    // 24 hours in seconds
-        // cookie.setSecure(true);  // uncomment in production: HTTPS only
+        cookie.setMaxAge(86400);
+        // cookie.setSecure(true); // enable in production (HTTPS only)
         response.addCookie(cookie);
     }
 }

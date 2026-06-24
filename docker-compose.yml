@@ -1,5 +1,34 @@
 services:
 
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - dl-network
+
+  java-service:
+    build: ./java-service
+    ports:
+      - "8081:8081"
+    env_file:
+      - .env
+    environment:
+      - JAVA_TOOL_OPTIONS=-Djava.net.preferIPv4Stack=true
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+    networks:
+      - dl-network
+
   go-gateway:
     build: ./go-gateway
     ports:
@@ -9,25 +38,12 @@ services:
       - JWT_SECRET=${JWT_SECRET}
       - JAVA_SERVICE_URL=http://java-service:8081
       - PYTHON_SERVICE_URL=http://python-ml-service:8000
+      - REDIS_URL=redis:6379
     depends_on:
       java-service:
         condition: service_healthy
-    networks:
-      - dl-network
-
-  java-service:
-    build: ./java-service
-    ports:
-      - "8081:8081"
-    environment:
-      - MONGO_URI=${MONGO_URI}
-      - JWT_SECRET=${JWT_SECRET}
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8081/healthz"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-      start_period: 30s
+      redis:
+        condition: service_healthy
     networks:
       - dl-network
 
@@ -36,19 +52,22 @@ services:
   #   ports:
   #     - "8000:8000"
   #   environment:
-  #     - MONGO_URI=${MONGO_URI}
+  #     - REDIS_URL=redis:6379
+  #   depends_on:
+  #     redis:
+  #       condition: service_healthy
   #   networks:
   #     - dl-network
 
-  react:
-    container_name: react_ui
-    build:
-      context: ./view
-      dockerfile: Dockerfile
-      target: production
-    ports:
-      - "80:80"
-    restart: always
+  # react:
+  #   build:
+  #     context: ./view
+  #     dockerfile: Dockerfile
+  #     target: production
+  #   ports:
+  #     - "80:80"
+  #   networks:
+  #     - dl-network
 
 networks:
   dl-network:

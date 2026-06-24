@@ -1,27 +1,36 @@
 package com.aiplatform.javaservice.model;
 
+import jakarta.persistence.*;
 import lombok.Data;
-import org.springframework.data.annotation.Id;
-import org.springframework.data.mongodb.core.index.Indexed;
-import org.springframework.data.mongodb.core.mapping.Document;
+import org.hibernate.annotations.CreationTimestamp;
 
 import java.time.Instant;
+import java.util.UUID;
 
+// Node.js equivalent: userModel.js (mongoose schema)
+// @Entity maps this class to the "users" table in PostgreSQL
 @Data
-@Document(collection = "users")
+@Entity
+@Table(name = "users")
 public class User {
-    @Id
-    private String id;
 
-    @Indexed(unique = true)
+    @Id
+    @GeneratedValue(strategy = GenerationType.UUID)
+    private UUID id;
+
+    @Column(unique = true, nullable = false, length = 50)
     private String username;
 
-    @Indexed(unique = true)
+    @Column(unique = true, nullable = false, length = 255)
     private String email;
 
+    @Column(nullable = false)
     private String password;
 
+    @Column(length = 100)
     private String name;
 
-    private Instant createdAt = Instant.now();
+    @CreationTimestamp
+    @Column(updatable = false)
+    private Instant createdAt;
 }

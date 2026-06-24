@@ -1,8 +1,18 @@
 spring:
   application:
     name: java-service
-  mongodb:
-    uri: ${MONGO_URI:mongodb://localhost:27017/dl-platform}
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/dl_platform}
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
 
 server:
   port: 8081
