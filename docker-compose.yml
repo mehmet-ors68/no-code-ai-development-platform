@@ -47,17 +47,15 @@ services:
     networks:
       - dl-network
 
-  # python-ml-service:
-  #   build: ./python-ml-service
-  #   ports:
-  #     - "8000:8000"
-  #   environment:
-  #     - REDIS_URL=redis:6379
-  #   depends_on:
-  #     redis:
-  #       condition: service_healthy
-  #   networks:
-  #     - dl-network
+  python-ml-service:
+    build: ./python-ml-service
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - dl-network
 
   # react:
   #   build:
