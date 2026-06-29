@@ -1,4 +1,4 @@
-# DL Platform
+# AI development Platform
 
 A no-code machine learning platform built with a microservice architecture. Users design neural networks or run classical ML models through a visual interface — no code required.
 
