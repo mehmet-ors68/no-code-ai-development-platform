@@ -57,6 +57,7 @@ func corsMiddleware() gin.HandlerFunc {
 	allowed := map[string]bool{
 		"http://localhost:3000":                             true,
 		"http://localhost:3001":                             true,
+		"http://localhost:5173":                             true,
 		"https://plokoon68.github.io":                       true,
 		"https://neural-builder.vercel.app":                 true,
 		"https://deep-learning-framework-view.onrender.com": true,
@@ -72,6 +73,10 @@ func corsMiddleware() gin.HandlerFunc {
 		}
 
 		if c.Request.Method == "OPTIONS" {
+			if !allowed[origin] {
+				c.AbortWithStatus(403)
+				return
+			}
 			c.AbortWithStatus(204)
 			return
 		}

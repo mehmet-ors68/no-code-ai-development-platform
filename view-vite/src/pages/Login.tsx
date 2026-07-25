@@ -20,7 +20,7 @@ export default function Login() {
     setError(null)
     setLoading(true)
 
-    const result = await login({ username, password })
+    const result = await login({ identifier: username, password })
     setLoading(false)
 
     if (result.success) {
@@ -47,7 +47,7 @@ export default function Login() {
         <form onSubmit={handleSubmit}>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="username">Username or email</Label>
               <Input
                 id="username"
                 value={username}

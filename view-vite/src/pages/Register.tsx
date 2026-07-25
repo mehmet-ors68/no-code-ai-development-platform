@@ -30,11 +30,13 @@ export default function Register() {
       return
     }
 
-    setError(
-      result.reason === 'user_exists'
-        ? 'This username is already taken.'
-        : 'Server error. Please try again.'
-    )
+    if (result.reason === 'validation_error') {
+      setError(result.message ?? 'Invalid input.')
+    } else if (result.reason === 'user_exists') {
+      setError(result.message ?? 'This username is already taken.')
+    } else {
+      setError('Server error. Please try again.')
+    }
   }
 
   return (
