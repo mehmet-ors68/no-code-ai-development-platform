@@ -30,13 +30,10 @@ export default function Register() {
       return
     }
 
-    if (result.reason === 'validation_error') {
-      setError(result.message ?? 'Invalid input.')
-    } else if (result.reason === 'user_exists') {
-      setError(result.message ?? 'This username is already taken.')
-    } else {
-      setError('Server error. Please try again.')
-    }
+    if (result.reason === 'validation_error') setError(result.message ?? 'Invalid input.')
+    else if (result.reason === 'user_exists') setError(result.message ?? 'This username is already taken.')
+    else if (result.reason === 'network_error') setError('Cannot reach server. Is the backend running?')
+    else setError('Server error. Please try again.')
   }
 
   return (

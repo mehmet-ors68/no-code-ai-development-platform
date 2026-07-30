@@ -14,14 +14,15 @@ export interface LoginPayload {
 // Discriminated union — caller knows exactly which case they're handling
 type AuthResult =
   | { success: true }
-  | { success: false; reason: 'user_exists' | 'invalid_credentials' | 'validation_error' | 'server_error'; message?: string }
+  | { success: false; reason: 'user_exists' | 'invalid_credentials' | 'validation_error' | 'server_error' | 'network_error'; message?: string }
 
 export const register = async (payload: RegisterPayload): Promise<AuthResult> => {
   try {
     await client.post('/auth/register', payload)
     return { success: true }
   } catch (err: any) {
-    if (err.response?.status === 400) {
+    if (!err.response) return { success: false, reason: 'network_error' }
+    if (err.response.status === 400) {
       const body = err.response.data
       // Java returns { errors: { field: "message" } } for @Valid failures
       // and { message: "..." } for duplicate user
@@ -40,7 +41,8 @@ export const login = async (payload: LoginPayload): Promise<AuthResult> => {
     await client.post('/auth/login', payload)
     return { success: true }
   } catch (err: any) {
-    if (err.response?.status === 401) return { success: false, reason: 'invalid_credentials' }
+    if (!err.response) return { success: false, reason: 'network_error' }
+    if (err.response.status === 401) return { success: false, reason: 'invalid_credentials' }
     return { success: false, reason: 'server_error' }
   }
 }

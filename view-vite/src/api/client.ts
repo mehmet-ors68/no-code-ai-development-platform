@@ -9,7 +9,7 @@ if (!baseURL) {
 
 const client = axios.create({
   baseURL,
-  timeout: 10_000,
+  timeout: 5_000,
   withCredentials: true, // send httpOnly JWT cookie on every request
   headers: { 'Content-Type': 'application/json' },
 })

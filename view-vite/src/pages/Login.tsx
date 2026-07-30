@@ -29,11 +29,9 @@ export default function Login() {
       return
     }
 
-    setError(
-      result.reason === 'invalid_credentials'
-        ? 'Invalid username or password.'
-        : 'Server error. Please try again.'
-    )
+    if (result.reason === 'invalid_credentials') setError('Invalid username or password.')
+    else if (result.reason === 'network_error') setError('Cannot reach server. Is the backend running?')
+    else setError('Server error. Please try again.')
   }
 
   return (
