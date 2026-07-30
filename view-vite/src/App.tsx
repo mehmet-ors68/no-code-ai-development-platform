@@ -6,6 +6,7 @@ import Landing from '@/pages/Landing'
 import Login from '@/pages/Login'
 import Register from '@/pages/Register'
 import MyModels from '@/pages/MyModels'
+import Process from '@/pages/Process'
 
 function App() {
   const { authStatus } = useAuth()
@@ -23,7 +24,10 @@ function App() {
           path="/my-models"
           element={<PrivateRoute><MyModels /></PrivateRoute>}
         />
-        {/* /process/:id — added once Keras training endpoint is ready */}
+        <Route
+          path="/process/:id"
+          element={<PrivateRoute><Process /></PrivateRoute>}
+        />
       </Routes>
     </>
   )

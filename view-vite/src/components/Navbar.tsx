@@ -23,7 +23,7 @@ export default function Navbar() {
         </Link>
 
         <div className="flex items-center gap-1">
-          {authStatus === 'authenticated' ? (
+          {authStatus === 'loading' ? null : authStatus === 'authenticated' ? (
             <>
               <Button variant="ghost" size="sm" asChild>
                 <Link to="/my-models">My Models</Link>
