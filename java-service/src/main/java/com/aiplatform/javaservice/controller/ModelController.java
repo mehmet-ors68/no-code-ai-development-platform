@@ -1,7 +1,9 @@
 package com.aiplatform.javaservice.controller;
 
+import com.aiplatform.javaservice.dto.CreateExperimentRequest;
 import com.aiplatform.javaservice.dto.CreateModelRequest;
 import com.aiplatform.javaservice.dto.UpdateModelRequest;
+import com.aiplatform.javaservice.model.Experiment;
 import com.aiplatform.javaservice.model.MlModel;
 import com.aiplatform.javaservice.model.ModelSpec;
 import com.aiplatform.javaservice.repository.ExperimentRepository;
@@ -58,9 +60,12 @@ public class ModelController {
             @RequestBody CreateModelRequest req,
             @RequestHeader("X-User-ID") String userId) {
 
+        String resolvedType = req.modelType() != null ? req.modelType() : "sklearn";
+
         MlModel model = new MlModel();
         model.setTitle(req.title());
         model.setDescription(req.description());
+        model.setModelType(resolvedType);
         model.setUserId(UUID.fromString(userId));
 
         MlModel saved = mlModelRepository.save(model);
@@ -68,7 +73,7 @@ public class ModelController {
         // Create an empty spec immediately — detail page always has a spec to load
         ModelSpec spec = new ModelSpec();
         spec.setModel(saved);
-        spec.setModelType(req.modelType() != null ? req.modelType() : "sklearn");
+        spec.setModelType(resolvedType);
         modelSpecRepository.save(spec);
 
         return ResponseEntity.status(HttpStatus.CREATED)
@@ -164,5 +169,38 @@ public class ModelController {
             return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
         }
         return ResponseEntity.ok(experimentRepository.findByModelIdOrderByCreatedAtDesc(id));
+    }
+
+    // POST /api/models/:id/experiments — save training run result (called by frontend after Python returns)
+    @PostMapping("/{id}/experiments")
+    @Transactional
+    public ResponseEntity<?> saveExperiment(
+            @PathVariable UUID id,
+            @RequestBody CreateExperimentRequest req,
+            @RequestHeader("X-User-ID") String userId) {
+
+        MlModel model = mlModelRepository.findById(id).orElse(null);
+        if (model == null) return ResponseEntity.notFound().build();
+        if (!model.getUserId().equals(UUID.fromString(userId))) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+
+        ModelSpec activeSpec = modelSpecRepository.findByModelIdAndIsActiveTrue(id).orElse(null);
+
+        Experiment exp = new Experiment();
+        exp.setModel(model);
+        exp.setModelSpec(activeSpec);
+        exp.setHyperparameters(req.hyperparameters());
+        exp.setMetrics(req.metrics());
+        exp.setStatus(req.status() != null ? req.status() : "completed");
+        exp.setDurationMs(req.durationMs());
+
+        experimentRepository.save(exp);
+
+        // Update model status to "trained" on successful run
+        if ("completed".equals(exp.getStatus())) {
+            model.setStatus("trained");
+            mlModelRepository.save(model);
+        }
+
+        return ResponseEntity.status(HttpStatus.CREATED).body(Map.of("message", "Experiment saved"));
     }
 }

@@ -25,6 +25,10 @@ public class MlModel {
     @Column(columnDefinition = "TEXT")
     private String description;
 
+    // sklearn | DL | yolo | nlp
+    @Column(nullable = false, length = 50)
+    private String modelType = "sklearn";
+
     // draft | training | trained | failed
     @Column(nullable = false, length = 50)
     private String status = "draft";

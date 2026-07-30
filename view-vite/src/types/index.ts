@@ -4,19 +4,32 @@ export interface MlModel {
   title: string
   description: string
   modelType: 'DL' | 'sklearn' | 'yolo' | 'nlp'
-  status: 'draft' | 'compiled' | 'trained'
+  status: 'draft' | 'training' | 'trained' | 'failed'
   createdAt: string
   updatedAt: string
 }
 
 export interface ModelSpec {
   id: string
-  modelId: string
   version: number
   isActive: boolean
   modelType: string
   datasetPath: string | null
   config: Record<string, unknown>
+  createdAt: string
+}
+
+export interface ModelDetail {
+  model: MlModel
+  spec: ModelSpec | Record<string, never>
+}
+
+export interface Experiment {
+  id: string
+  hyperparameters: Record<string, unknown>
+  metrics: Record<string, unknown>
+  status: 'completed' | 'failed'
+  durationMs: number | null
   createdAt: string
 }
 
