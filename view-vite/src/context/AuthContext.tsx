@@ -1,19 +1,14 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
-import { checkAuth } from '@/api/auth'
+import { createContext, useContext, useState, type ReactNode } from 'react'
 import type { AuthContextType, AuthStatus } from '@/types'
 
 // Why null default: forces a runtime error if useAuth() is called outside AuthProvider.
-// The old version silently returned undefined — much harder to debug.
 const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // 'loading' → 'authenticated' | 'unauthenticated'
-  // Replaces the old isLoggedIn + globalLoading + waitAuthorization (3 booleans doing the same job)
+  // Start as 'loading' so PrivateRoute shows a spinner while the first protected
+  // API call runs. The page that makes the call (e.g. MyModels) transitions this
+  // to 'authenticated' or 'unauthenticated' based on the response.
   const [authStatus, setAuthStatus] = useState<AuthStatus>('loading')
-
-  useEffect(() => {
-    checkAuth().then(ok => setAuthStatus(ok ? 'authenticated' : 'unauthenticated'))
-  }, [])
 
   return (
     <AuthContext.Provider value={{ authStatus, setAuthStatus }}>

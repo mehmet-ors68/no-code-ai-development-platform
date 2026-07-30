@@ -1,6 +1,7 @@
 import { useState, useEffect, type MouseEvent } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { fetchModels, createModel, deleteModel } from '@/api/models'
+import { useAuth } from '@/context/AuthContext'
 import type { MlModel } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -30,12 +31,17 @@ export default function MyModels() {
   const [newType, setNewType] = useState<MlModel['modelType']>('sklearn')
   const [creating, setCreating] = useState(false)
   const navigate = useNavigate()
+  const { setAuthStatus } = useAuth()
 
   useEffect(() => {
     fetchModels()
-      .then(setModels)
+      .then(data => {
+        setAuthStatus('authenticated')
+        setModels(data)
+      })
+      .catch(() => setAuthStatus('unauthenticated'))
       .finally(() => setLoading(false))
-  }, [])
+  }, [setAuthStatus])
 
   const handleCreate = async () => {
     if (!newName.trim()) return

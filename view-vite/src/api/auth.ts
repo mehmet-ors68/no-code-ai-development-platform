@@ -50,13 +50,3 @@ export const login = async (payload: LoginPayload): Promise<AuthResult> => {
 export const logout = async (): Promise<void> => {
   await client.get('/auth/logout')
 }
-
-// Called on app load to check if the JWT cookie is still valid
-export const checkAuth = async (): Promise<boolean> => {
-  try {
-    await client.get('/auth/protected')
-    return true
-  } catch {
-    return false
-  }
-}

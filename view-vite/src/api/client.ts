@@ -14,4 +14,18 @@ const client = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+// Session expiry during active use — redirect to login on 401 from protected routes.
+// Auth routes (/auth/login, /auth/register) are excluded: their 401s mean wrong
+// credentials, not an expired session, and the form handles them via catch block.
+client.interceptors.response.use(
+  res => res,
+  err => {
+    const url: string = err.config?.url ?? ''
+    if (err.response?.status === 401 && !url.includes('/auth/')) {
+      window.location.href = '/login'
+    }
+    return Promise.reject(err)
+  }
+)
+
 export default client
