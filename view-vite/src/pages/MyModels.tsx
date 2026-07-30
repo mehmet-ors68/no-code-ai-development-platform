@@ -26,7 +26,7 @@ export default function MyModels() {
   const [models, setModels] = useState<MlModel[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
-  const [newName, setNewName] = useState('')
+  const [newTitle, setNewTitle] = useState('')
   const [newDesc, setNewDesc] = useState('')
   const [newType, setNewType] = useState<MlModel['modelType']>('sklearn')
   const [creating, setCreating] = useState(false)
@@ -44,11 +44,12 @@ export default function MyModels() {
   }, [setAuthStatus])
 
   const handleCreate = async () => {
-    if (!newName.trim()) return
+    if (!newTitle.trim()) return
     setCreating(true)
-    const model = await createModel({ name: newName.trim(), description: newDesc.trim(), modelType: newType })
-    setModels(prev => [model, ...prev])
-    setNewName('')
+    await createModel({ title: newTitle.trim(), description: newDesc.trim(), modelType: newType })
+    const updated = await fetchModels()
+    setModels(updated)
+    setNewTitle('')
     setNewDesc('')
     setNewType('sklearn')
     setShowCreate(false)
@@ -97,8 +98,8 @@ export default function MyModels() {
               <Label htmlFor="model-name">Name</Label>
               <Input
                 id="model-name"
-                value={newName}
-                onChange={e => setNewName(e.target.value)}
+                value={newTitle}
+                onChange={e => setNewTitle(e.target.value)}
                 placeholder="e.g. Iris Classifier"
                 autoFocus
               />
@@ -127,7 +128,7 @@ export default function MyModels() {
             </div>
           </CardContent>
           <CardFooter className="gap-2">
-            <Button onClick={handleCreate} disabled={creating || !newName.trim()}>
+            <Button onClick={handleCreate} disabled={creating || !newTitle.trim()}>
               {creating ? 'Creating…' : 'Create'}
             </Button>
             <Button variant="ghost" onClick={() => setShowCreate(false)}>Cancel</Button>
@@ -151,7 +152,7 @@ export default function MyModels() {
             >
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between gap-2">
-                  <CardTitle className="text-base leading-tight">{model.name}</CardTitle>
+                  <CardTitle className="text-base leading-tight">{model.title}</CardTitle>
                   <Button
                     variant="ghost"
                     size="icon"

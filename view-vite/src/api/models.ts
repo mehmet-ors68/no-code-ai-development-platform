@@ -7,10 +7,9 @@ export const fetchModels = async (): Promise<MlModel[]> => {
 }
 
 export const createModel = async (
-  data: Pick<MlModel, 'name' | 'description' | 'modelType'>
-): Promise<MlModel> => {
-  const res = await client.post<MlModel>('/models', data)
-  return res.data
+  data: Pick<MlModel, 'title' | 'description' | 'modelType'>
+): Promise<void> => {
+  await client.post('/models', data)
 }
 
 export const updateModel = async (id: string, data: Partial<MlModel>): Promise<MlModel> => {

@@ -1,7 +1,7 @@
 export interface MlModel {
   id: string
   userId: string
-  name: string
+  title: string
   description: string
   modelType: 'DL' | 'sklearn' | 'yolo' | 'nlp'
   status: 'draft' | 'compiled' | 'trained'
