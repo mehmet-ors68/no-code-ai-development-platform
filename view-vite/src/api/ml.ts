@@ -16,7 +16,7 @@ export interface TrainRequest {
 
 export interface TrainResult {
   metrics: Record<string, number>
-  model_b64: string
+  model_url: string  // Supabase Storage public URL
 }
 
 export const trainSklearn = async (req: TrainRequest): Promise<TrainResult> => {
@@ -24,7 +24,7 @@ export const trainSklearn = async (req: TrainRequest): Promise<TrainResult> => {
   return res.data
 }
 
-export const predictSklearn = async (modelB64: string, data: Record<string, unknown>[]): Promise<unknown[]> => {
-  const res = await client.post<{ predictions: unknown[] }>('/ml/predict', { model_b64: modelB64, data }, { timeout: 30_000 })
-  return res.predictions ?? res.data.predictions
+export const predictSklearn = async (modelUrl: string, data: Record<string, unknown>[]): Promise<unknown[]> => {
+  const res = await client.post<{ predictions: unknown[] }>('/ml/predict', { model_url: modelUrl, data }, { timeout: 30_000 })
+  return res.data.predictions
 }

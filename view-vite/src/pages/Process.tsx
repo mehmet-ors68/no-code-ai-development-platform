@@ -1,9 +1,9 @@
 import { useState, useEffect, useRef, type ChangeEvent } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Papa from 'papaparse'
-import { BrainCircuit, Upload, Play, ChevronLeft, CheckCircle2, XCircle, Clock } from 'lucide-react'
-import { fetchModel, saveExperiment, fetchExperiments } from '@/api/models'
-import { trainSklearn, type SklearnAlgorithm, type TrainResult } from '@/api/ml'
+import { BrainCircuit, Upload, Play, ChevronLeft, CheckCircle2, XCircle, Clock, Trash2, Download } from 'lucide-react'
+import { fetchModel, saveExperiment, fetchExperiments, deleteExperiment } from '@/api/models'
+import { trainSklearn, predictSklearn, type SklearnAlgorithm, type TrainResult } from '@/api/ml'
 import type { ModelDetail, Experiment } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -77,6 +77,14 @@ export default function Process() {
   const [training, setTraining] = useState(false)
   const [result, setResult] = useState<TrainResult | null>(null)
   const [trainError, setTrainError] = useState('')
+
+  // Predict
+  const [predictFile, setPredictFile] = useState<File | null>(null)
+  const [predictRows, setPredictRows] = useState<Record<string, unknown>[]>([])
+  const [predictions, setPredictions] = useState<unknown[] | null>(null)
+  const [predicting, setPredicting] = useState(false)
+  const [predictError, setPredictError] = useState('')
+  const predictFileRef = useRef<HTMLInputElement>(null)
 
   // History
   const [experiments, setExperiments] = useState<Experiment[]>([])
@@ -157,6 +165,7 @@ export default function Process() {
         metrics: res.metrics,
         status: 'completed',
         durationMs,
+        modelUrl: res.model_url,
       })
         .then(() => Promise.all([fetchExperiments(id), fetchModel(id)]))
         .then(([exps, updated]) => {
@@ -171,6 +180,38 @@ export default function Process() {
       setTrainError(msg ?? 'Training failed. Check your dataset and try again.')
     } finally {
       setTraining(false)
+    }
+  }
+
+  // ── Predict ──────────────────────────────────────────────────────────────────
+  const activeModel = experiments.find(e => e.status === 'completed' && e.modelFilePath)
+
+  const handlePredictFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setPredictFile(file)
+    setPredictions(null)
+    setPredictError('')
+    Papa.parse<Record<string, unknown>>(file, {
+      header: true,
+      dynamicTyping: true,
+      skipEmptyLines: true,
+      complete: (parsed) => setPredictRows(parsed.data),
+    })
+  }
+
+  const handlePredict = async () => {
+    if (!activeModel?.modelFilePath || !predictRows.length) return
+    setPredicting(true)
+    setPredictions(null)
+    setPredictError('')
+    try {
+      const preds = await predictSklearn(activeModel.modelFilePath, predictRows)
+      setPredictions(preds)
+    } catch {
+      setPredictError('Prediction failed. Make sure the CSV columns match the training dataset.')
+    } finally {
+      setPredicting(false)
     }
   }
 
@@ -382,7 +423,7 @@ export default function Process() {
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-2 gap-3">
-                    {Object.entries(result.metrics).map(([key, val]) => (
+                    {Object.entries(result.metrics).filter(([, val]) => val != null).map(([key, val]) => (
                       <div key={key} className="rounded-lg bg-muted/50 p-3">
                         <p className="text-xs text-muted-foreground">{formatMetricKey(key)}</p>
                         <p className="text-xl font-semibold tabular-nums">{formatMetricValue(key, val)}</p>
@@ -396,6 +437,65 @@ export default function Process() {
         </div>
       )}
 
+      {/* Predict */}
+      {isSklearn && activeModel && (
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold">Predict</h2>
+          <Card>
+            <CardContent className="pt-5 space-y-4">
+              <p className="text-xs text-muted-foreground">
+                Upload a CSV with the same feature columns as your training data (no target column needed).
+              </p>
+              <button
+                type="button"
+                onClick={() => predictFileRef.current?.click()}
+                className="w-full rounded-lg border-2 border-dashed border-border py-6 text-center hover:border-primary/40 transition-colors"
+              >
+                <Upload className="mx-auto mb-1 h-5 w-5 text-muted-foreground" />
+                <p className="text-sm font-medium">{predictFile?.name ?? 'Click to upload CSV'}</p>
+                {predictRows.length > 0 && (
+                  <p className="text-xs text-muted-foreground mt-0.5">{predictRows.length} rows</p>
+                )}
+              </button>
+              <input ref={predictFileRef} type="file" accept=".csv" className="hidden" onChange={handlePredictFile} />
+
+              <Button className="w-full" disabled={!predictRows.length || predicting} onClick={handlePredict}>
+                {predicting
+                  ? <><span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white inline-block" />Predicting…</>
+                  : <><Play className="mr-2 h-4 w-4" />Run Predictions</>
+                }
+              </Button>
+
+              {predictError && <p className="text-sm text-red-400">{predictError}</p>}
+
+              {predictions && (
+                <div className="rounded-lg border border-border overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border bg-muted/30">
+                        <th className="px-3 py-2 text-left text-xs text-muted-foreground font-medium">#</th>
+                        <th className="px-3 py-2 text-left text-xs text-muted-foreground font-medium">Prediction</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {predictions.slice(0, 50).map((pred, i) => (
+                        <tr key={i} className="border-b border-border/50 last:border-0">
+                          <td className="px-3 py-1.5 text-muted-foreground tabular-nums">{i + 1}</td>
+                          <td className="px-3 py-1.5 font-medium">{String(pred)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {predictions.length > 50 && (
+                    <p className="px-3 py-2 text-xs text-muted-foreground">Showing first 50 of {predictions.length} predictions</p>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
+
       {/* Experiment history */}
       {experiments.length > 0 && (
         <div className="space-y-3">
@@ -404,15 +504,13 @@ export default function Process() {
             {experiments.map((exp, i) => (
               <div key={exp.id} className="rounded-lg border border-border p-4">
                 <div className="flex items-center justify-between gap-2 flex-wrap">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-xs text-muted-foreground font-mono">#{experiments.length - i}</span>
                     {statusBadge(exp.status)}
                     <span className="text-xs text-muted-foreground capitalize">
                       {String(exp.hyperparameters.algorithm ?? '').replace(/_/g, ' ')}
                     </span>
-                  </div>
-                  <div className="flex items-center gap-3">
-                    {Object.entries(exp.metrics).map(([k, v]) => (
+                    {Object.entries(exp.metrics).filter(([, v]) => v != null).map(([k, v]) => (
                       <span key={k} className="text-xs">
                         <span className="text-muted-foreground">{formatMetricKey(k)}: </span>
                         <span className="font-medium">{formatMetricValue(k, Number(v))}</span>
@@ -421,6 +519,29 @@ export default function Process() {
                     {exp.durationMs && (
                       <span className="text-xs text-muted-foreground">{(exp.durationMs / 1000).toFixed(1)}s</span>
                     )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {exp.modelFilePath && (
+                      <a
+                        href={exp.modelFilePath}
+                        download
+                        className="inline-flex items-center gap-1.5 rounded-md border border-primary/40 px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary/10 transition-colors"
+                      >
+                        <Download className="h-4 w-4" />
+                        Download
+                      </a>
+                    )}
+                    <button
+                      onClick={async () => {
+                        if (!id) return
+                        await deleteExperiment(id, exp.id)
+                        setExperiments(prev => prev.filter(e => e.id !== exp.id))
+                      }}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-red-500/40 px-3 py-1.5 text-xs font-medium text-red-400 hover:bg-red-500/10 transition-colors"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      Delete
+                    </button>
                   </div>
                 </div>
               </div>

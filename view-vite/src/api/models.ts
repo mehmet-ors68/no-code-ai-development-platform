@@ -33,6 +33,7 @@ export const saveExperiment = async (
     metrics: Record<string, unknown>
     status: 'completed' | 'failed'
     durationMs: number
+    modelUrl?: string
   }
 ): Promise<void> => {
   await client.post(`/models/${modelId}/experiments`, data)
@@ -41,4 +42,8 @@ export const saveExperiment = async (
 export const fetchExperiments = async (modelId: string): Promise<Experiment[]> => {
   const res = await client.get<Experiment[]>(`/models/${modelId}/experiments`)
   return res.data
+}
+
+export const deleteExperiment = async (modelId: string, experimentId: string): Promise<void> => {
+  await client.delete(`/models/${modelId}/experiments/${experimentId}`)
 }

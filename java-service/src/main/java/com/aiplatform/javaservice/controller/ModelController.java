@@ -171,6 +171,26 @@ public class ModelController {
         return ResponseEntity.ok(experimentRepository.findByModelIdOrderByCreatedAtDesc(id));
     }
 
+    // DELETE /api/models/:id/experiments/:expId — remove a single training run
+    @DeleteMapping("/{id}/experiments/{expId}")
+    public ResponseEntity<?> deleteExperiment(
+            @PathVariable UUID id,
+            @PathVariable UUID expId,
+            @RequestHeader("X-User-ID") String userId) {
+
+        if (!mlModelRepository.existsByIdAndUserId(id, UUID.fromString(userId))) {
+            return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+        }
+
+        Experiment exp = experimentRepository.findById(expId).orElse(null);
+        if (exp == null || !exp.getModel().getId().equals(id)) {
+            return ResponseEntity.notFound().build();
+        }
+
+        experimentRepository.deleteById(expId);
+        return ResponseEntity.ok(Map.of("message", "Experiment deleted"));
+    }
+
     // POST /api/models/:id/experiments — save training run result (called by frontend after Python returns)
     @PostMapping("/{id}/experiments")
     @Transactional
@@ -192,6 +212,7 @@ public class ModelController {
         exp.setMetrics(req.metrics());
         exp.setStatus(req.status() != null ? req.status() : "completed");
         exp.setDurationMs(req.durationMs());
+        exp.setModelFilePath(req.modelUrl());
 
         experimentRepository.save(exp);
 

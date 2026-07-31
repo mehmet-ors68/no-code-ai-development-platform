@@ -1,44 +1,59 @@
 import io
-import base64
-import pickle
+import uuid
+import os
+import joblib
+import requests as req_lib
 
 import numpy as np
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict
+from supabase import create_client, Client
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.model_selection import train_test_split
-from sklearn.metrics import (
-    accuracy_score, mean_squared_error, r2_score, classification_report
-)
+from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
 from sklearn.preprocessing import LabelEncoder
 
 router = APIRouter()
 
-# ── Request / Response schemas ──────────────────────────────────────────────
+BUCKET = "ml-models"
+
+_supabase: Client | None = None
+
+def get_supabase() -> Client:
+    global _supabase
+    if _supabase is None:
+        url = os.environ.get("SUPABASE_URL")
+        key = os.environ.get("SUPABASE_SERVICE_KEY")
+        if not url or not key:
+            raise HTTPException(status_code=500, detail="Supabase storage not configured")
+        _supabase = create_client(url, key)
+    return _supabase
+
+
+# ── Schemas ───────────────────────────────────────────────────────────────────
 
 class TrainRequest(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
-    model_type: str          # linear_regression | logistic_regression | random_forest_classifier | random_forest_regressor
-    dataset: list[dict]      # rows as JSON objects, e.g. [{"feature1": 1.0, "label": 0}, ...]
-    target_column: str       # name of the column to predict
-    hyperparameters: dict = {}  # model-specific params (n_estimators, max_depth, etc.)
+    model_type: str
+    dataset: list[dict]
+    target_column: str
+    hyperparameters: dict = {}
     test_size: float = 0.2
 
 class TrainResponse(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
     metrics: dict
-    model_b64: str           # pickled model, base64 encoded — caller decides where to store it
-
+    model_url: str  # Supabase Storage public URL
 
 class PredictRequest(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
-    model_b64: str           # the same base64 string returned from /train
-    data: list[dict]         # rows to predict (same feature columns, no target)
+    model_url: str  # public Supabase Storage URL
+    data: list[dict]
 
 
-# ── Endpoints ────────────────────────────────────────────────────────────────
+# ── Endpoints ─────────────────────────────────────────────────────────────────
 
 @router.post("/train", response_model=TrainResponse)
 def train(req: TrainRequest):
@@ -50,33 +65,44 @@ def train(req: TrainRequest):
     X = df.drop(columns=[req.target_column])
     y = df[req.target_column]
 
-    # Encode string target labels for classifiers
     le = None
     if y.dtype == object:
         le = LabelEncoder()
         y = le.fit_transform(y)
 
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=req.test_size, random_state=42
-    )
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=req.test_size, random_state=42)
 
     model = _build_model(req.model_type, req.hyperparameters)
     model.fit(X_train, y_train)
     metrics = _evaluate(model, X_test, y_test, req.model_type)
 
-    # Serialize model + label encoder together so predict works end-to-end
+    # Serialize model payload to bytes
     payload = {"model": model, "label_encoder": le, "features": list(X.columns)}
-    model_b64 = base64.b64encode(pickle.dumps(payload)).decode("utf-8")
+    buf = io.BytesIO()
+    joblib.dump(payload, buf)
+    model_bytes = buf.getvalue()
 
-    return TrainResponse(metrics=metrics, model_b64=model_b64)
+    # Upload to Supabase Storage
+    file_key = f"models/{uuid.uuid4()}.joblib"
+    sb = get_supabase()
+    sb.storage.from_(BUCKET).upload(
+        path=file_key,
+        file=model_bytes,
+        file_options={"content-type": "application/octet-stream"},
+    )
+    model_url = sb.storage.from_(BUCKET).get_public_url(file_key)
+
+    return TrainResponse(metrics=metrics, model_url=model_url)
 
 
 @router.post("/predict")
 def predict(req: PredictRequest):
     try:
-        payload = pickle.loads(base64.b64decode(req.model_b64))
-    except Exception:
-        raise HTTPException(status_code=400, detail="Invalid model_b64")
+        resp = req_lib.get(req.model_url, timeout=30)
+        resp.raise_for_status()
+        payload = joblib.load(io.BytesIO(resp.content))
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Failed to load model: {e}")
 
     model = payload["model"]
     le    = payload["label_encoder"]
@@ -90,7 +116,7 @@ def predict(req: PredictRequest):
     return {"predictions": preds.tolist()}
 
 
-# ── Helpers ──────────────────────────────────────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _build_model(model_type: str, hp: dict):
     match model_type:
@@ -101,29 +127,35 @@ def _build_model(model_type: str, hp: dict):
         case "random_forest_classifier":
             return RandomForestClassifier(
                 n_estimators=hp.get("n_estimators", 100),
-                max_depth=hp.get("max_depth", None),
+                max_depth=hp.get("max_depth") or None,
                 random_state=42,
             )
         case "random_forest_regressor":
             return RandomForestRegressor(
                 n_estimators=hp.get("n_estimators", 100),
-                max_depth=hp.get("max_depth", None),
+                max_depth=hp.get("max_depth") or None,
                 random_state=42,
             )
         case _:
             raise HTTPException(status_code=400, detail=f"Unknown model_type: {model_type}")
 
 
+def _safe_float(val) -> float | None:
+    try:
+        f = float(val)
+        return None if (f != f) else f  # NaN check
+    except (TypeError, ValueError):
+        return None
+
+
 def _evaluate(model, X_test, y_test, model_type: str) -> dict:
     preds = model.predict(X_test)
-
     if "regressor" in model_type or model_type == "linear_regression":
+        mse = float(mean_squared_error(y_test, preds))
         return {
-            "mse":  float(mean_squared_error(y_test, preds)),
-            "rmse": float(np.sqrt(mean_squared_error(y_test, preds))),
-            "r2":   float(r2_score(y_test, preds)),
+            "mse":  mse,
+            "rmse": float(np.sqrt(mse)),
+            "r2":   _safe_float(r2_score(y_test, preds)),
         }
     else:
-        return {
-            "accuracy": float(accuracy_score(y_test, preds)),
-        }
+        return {"accuracy": float(accuracy_score(y_test, preds))}
