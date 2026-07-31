@@ -6,5 +6,6 @@ public record CreateExperimentRequest(
     Map<String, Object> hyperparameters,
     Map<String, Object> metrics,
     String status,
-    Integer durationMs
+    Integer durationMs,
+    String modelB64
 ) {}

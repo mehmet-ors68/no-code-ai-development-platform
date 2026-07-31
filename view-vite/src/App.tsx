@@ -17,9 +17,9 @@ function App() {
     <>
       <Navbar />
       <Routes>
-        <Route path="/" element={isAuth ? <Navigate to="/my-models" replace /> : <Landing />} />
-        <Route path="/login" element={isAuth ? <Navigate to="/my-models" replace /> : <Login />} />
-        <Route path="/register" element={isAuth ? <Navigate to="/my-models" replace /> : <Register />} />
+        <Route path="/" element={authStatus === 'loading' ? null : isAuth ? <Navigate to="/my-models" replace /> : <Landing />} />
+        <Route path="/login" element={authStatus === 'loading' ? null : isAuth ? <Navigate to="/my-models" replace /> : <Login />} />
+        <Route path="/register" element={authStatus === 'loading' ? null : isAuth ? <Navigate to="/my-models" replace /> : <Register />} />
         <Route
           path="/my-models"
           element={<PrivateRoute><MyModels /></PrivateRoute>}

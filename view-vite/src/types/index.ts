@@ -30,6 +30,7 @@ export interface Experiment {
   metrics: Record<string, unknown>
   status: 'completed' | 'failed'
   durationMs: number | null
+  modelFilePath: string | null  // stores model_b64 for sklearn models
   createdAt: string
 }
 

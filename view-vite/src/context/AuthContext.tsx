@@ -1,14 +1,21 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
+import { fetchModels } from '@/api/models'
 import type { AuthContextType, AuthStatus } from '@/types'
 
 // Why null default: forces a runtime error if useAuth() is called outside AuthProvider.
 const AuthContext = createContext<AuthContextType | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  // Start as 'loading' so PrivateRoute shows a spinner while the first protected
-  // API call runs. The page that makes the call (e.g. MyModels) transitions this
-  // to 'authenticated' or 'unauthenticated' based on the response.
   const [authStatus, setAuthStatus] = useState<AuthStatus>('loading')
+
+  // Resolve auth status eagerly on app mount — one lightweight GET /models call.
+  // This way login/register pages can redirect authenticated users immediately,
+  // regardless of which page the user lands on.
+  useEffect(() => {
+    fetchModels()
+      .then(() => setAuthStatus('authenticated'))
+      .catch(() => setAuthStatus('unauthenticated'))
+  }, [])
 
   return (
     <AuthContext.Provider value={{ authStatus, setAuthStatus }}>

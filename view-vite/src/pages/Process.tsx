@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import Papa from 'papaparse'
 import { BrainCircuit, Upload, Play, ChevronLeft, CheckCircle2, XCircle, Clock } from 'lucide-react'
 import { fetchModel, saveExperiment, fetchExperiments } from '@/api/models'
-import { trainSklearn, type SklearnAlgorithm, type TrainResult } from '@/api/ml'
+import { trainSklearn, predictSklearn, type SklearnAlgorithm, type TrainResult } from '@/api/ml'
 import type { ModelDetail, Experiment } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
@@ -34,15 +34,18 @@ function formatMetricKey(key: string): string {
   return key.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase())
 }
 
-function formatMetricValue(val: number): string {
-  if (val > 1) return val.toFixed(4)          // MSE / RMSE
-  return (val * 100).toFixed(2) + '%'          // accuracy / r2 as %
+const PERCENT_METRICS = new Set(['accuracy', 'r2'])
+
+function formatMetricValue(key: string, val: number): string {
+  if (PERCENT_METRICS.has(key)) return (val * 100).toFixed(2) + '%'
+  return val.toFixed(6).replace(/\.?0+$/, '') || '0'  // mse, rmse as raw number, strip trailing zeros
 }
 
 function statusBadge(status: string) {
   const base = 'inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-medium'
   switch (status) {
-    case 'trained':  return <span className={`${base} bg-green-500/10 text-green-400`}><CheckCircle2 className="h-3 w-3" /> Trained</span>
+    case 'completed':
+    case 'trained':  return <span className={`${base} bg-green-500/10 text-green-400`}><CheckCircle2 className="h-3 w-3" /> Completed</span>
     case 'training': return <span className={`${base} bg-yellow-500/10 text-yellow-400`}><Clock className="h-3 w-3" /> Training</span>
     case 'failed':   return <span className={`${base} bg-red-500/10 text-red-400`}><XCircle className="h-3 w-3" /> Failed</span>
     default:         return <span className={`${base} bg-muted text-muted-foreground`}>Draft</span>
@@ -75,6 +78,14 @@ export default function Process() {
   const [result, setResult] = useState<TrainResult | null>(null)
   const [trainError, setTrainError] = useState('')
 
+  // Predict
+  const [predictFile, setPredictFile] = useState<File | null>(null)
+  const [predictRows, setPredictRows] = useState<Record<string, unknown>[]>([])
+  const [predictions, setPredictions] = useState<unknown[] | null>(null)
+  const [predicting, setPredicting] = useState(false)
+  const [predictError, setPredictError] = useState('')
+  const predictFileRef = useRef<HTMLInputElement>(null)
+
   // History
   const [experiments, setExperiments] = useState<Experiment[]>([])
 
@@ -90,7 +101,10 @@ export default function Process() {
         if (cfg?.n_estimators) setHp(prev => ({ ...prev, n_estimators: cfg.n_estimators as number }))
         if (cfg?.max_depth) setHp(prev => ({ ...prev, max_depth: cfg.max_depth as number }))
       })
-      .catch(() => setLoadError(true))
+      .catch((err) => {
+        // 401 → interceptor handles redirect to /login, don't show "Model not found"
+        if (err?.response?.status !== 401) setLoadError(true)
+      })
 
     fetchExperiments(id).then(setExperiments).catch(() => {})
   }, [id])
@@ -151,6 +165,7 @@ export default function Process() {
         metrics: res.metrics,
         status: 'completed',
         durationMs,
+        modelB64: res.model_b64,
       })
         .then(() => Promise.all([fetchExperiments(id), fetchModel(id)]))
         .then(([exps, updated]) => {
@@ -165,6 +180,38 @@ export default function Process() {
       setTrainError(msg ?? 'Training failed. Check your dataset and try again.')
     } finally {
       setTraining(false)
+    }
+  }
+
+  // ── Predict ─────────────────────────────────────────────────────────────────
+  const activeModel = experiments.find(e => e.status === 'completed' && e.modelFilePath)
+
+  const handlePredictFile = (e: ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setPredictFile(file)
+    setPredictions(null)
+    setPredictError('')
+    Papa.parse<Record<string, unknown>>(file, {
+      header: true,
+      dynamicTyping: true,
+      skipEmptyLines: true,
+      complete: (parsed) => setPredictRows(parsed.data),
+    })
+  }
+
+  const handlePredict = async () => {
+    if (!activeModel?.modelFilePath || !predictRows.length) return
+    setPredicting(true)
+    setPredictions(null)
+    setPredictError('')
+    try {
+      const preds = await predictSklearn(activeModel.modelFilePath, predictRows)
+      setPredictions(preds)
+    } catch {
+      setPredictError('Prediction failed. Make sure the CSV columns match the training dataset.')
+    } finally {
+      setPredicting(false)
     }
   }
 
@@ -379,7 +426,7 @@ export default function Process() {
                     {Object.entries(result.metrics).map(([key, val]) => (
                       <div key={key} className="rounded-lg bg-muted/50 p-3">
                         <p className="text-xs text-muted-foreground">{formatMetricKey(key)}</p>
-                        <p className="text-xl font-semibold tabular-nums">{formatMetricValue(val)}</p>
+                        <p className="text-xl font-semibold tabular-nums">{formatMetricValue(key, val)}</p>
                       </div>
                     ))}
                   </div>
@@ -387,6 +434,69 @@ export default function Process() {
               </Card>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Predict */}
+      {isSklearn && activeModel && (
+        <div className="space-y-4">
+          <h2 className="text-lg font-semibold">Predict</h2>
+          <Card>
+            <CardContent className="pt-5 space-y-4">
+              <p className="text-xs text-muted-foreground">
+                Upload a CSV with the same feature columns as your training data (no target column needed).
+              </p>
+              <button
+                type="button"
+                onClick={() => predictFileRef.current?.click()}
+                className="w-full rounded-lg border-2 border-dashed border-border py-6 text-center hover:border-primary/40 transition-colors"
+              >
+                <Upload className="mx-auto mb-1 h-5 w-5 text-muted-foreground" />
+                <p className="text-sm font-medium">{predictFile?.name ?? 'Click to upload CSV'}</p>
+                {predictRows.length > 0 && (
+                  <p className="text-xs text-muted-foreground mt-0.5">{predictRows.length} rows</p>
+                )}
+              </button>
+              <input ref={predictFileRef} type="file" accept=".csv" className="hidden" onChange={handlePredictFile} />
+
+              <Button
+                className="w-full"
+                disabled={!predictRows.length || predicting}
+                onClick={handlePredict}
+              >
+                {predicting
+                  ? <><span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white inline-block" />Predicting…</>
+                  : <><Play className="mr-2 h-4 w-4" />Run Predictions</>
+                }
+              </Button>
+
+              {predictError && <p className="text-sm text-red-400">{predictError}</p>}
+
+              {predictions && (
+                <div className="rounded-lg border border-border overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-border bg-muted/30">
+                        <th className="px-3 py-2 text-left text-xs text-muted-foreground font-medium">#</th>
+                        <th className="px-3 py-2 text-left text-xs text-muted-foreground font-medium">Prediction</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {predictions.slice(0, 50).map((pred, i) => (
+                        <tr key={i} className="border-b border-border/50 last:border-0">
+                          <td className="px-3 py-1.5 text-muted-foreground tabular-nums">{i + 1}</td>
+                          <td className="px-3 py-1.5 font-medium">{String(pred)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                  {predictions.length > 50 && (
+                    <p className="px-3 py-2 text-xs text-muted-foreground">Showing first 50 of {predictions.length} predictions</p>
+                  )}
+                </div>
+              )}
+            </CardContent>
+          </Card>
         </div>
       )}
 
@@ -409,7 +519,7 @@ export default function Process() {
                     {Object.entries(exp.metrics).map(([k, v]) => (
                       <span key={k} className="text-xs">
                         <span className="text-muted-foreground">{formatMetricKey(k)}: </span>
-                        <span className="font-medium">{formatMetricValue(Number(v))}</span>
+                        <span className="font-medium">{formatMetricValue(k, Number(v))}</span>
                       </span>
                     ))}
                     {exp.durationMs && (

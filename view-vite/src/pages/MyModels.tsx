@@ -19,7 +19,9 @@ const MODEL_TYPE_LABELS: Record<MlModel['modelType'], string> = {
 const STATUS_CLASS: Record<MlModel['status'], string> = {
   draft: 'text-muted-foreground',
   compiled: 'text-yellow-400',
+  training: 'text-yellow-400',
   trained: 'text-green-400',
+  failed: 'text-red-400',
 }
 
 export default function MyModels() {

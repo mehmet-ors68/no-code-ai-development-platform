@@ -41,8 +41,8 @@ public class Experiment {
     @Column(columnDefinition = "jsonb", nullable = false)
     private Map<String, Object> metrics;
 
-    // Path to serialized model file (.joblib, .pt, .h5) on disk or S3
-    @Column(length = 500)
+    // Stores base64-encoded sklearn model pickle (or S3 path for large models later)
+    @Column(columnDefinition = "TEXT")
     private String modelFilePath;
 
     // completed | failed
