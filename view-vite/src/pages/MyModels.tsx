@@ -7,26 +7,34 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
-import { Plus, Trash2, BrainCircuit, BarChart3 } from 'lucide-react'
+import { Plus, Trash2, BrainCircuit, BarChart3, Search, ChevronRight } from 'lucide-react'
 
 const MODEL_TYPE_LABELS: Record<MlModel['modelType'], string> = {
-  DL: 'Deep Learning (Keras)',
-  sklearn: 'Classical ML (sklearn)',
-  yolo: 'Object Detection (YOLO)',
-  nlp: 'NLP (HuggingFace)',
+  DL: 'Deep Learning',
+  sklearn: 'Classical ML',
+  yolo: 'Object Detection',
+  nlp: 'NLP',
 }
 
-const STATUS_CLASS: Record<MlModel['status'], string> = {
-  draft: 'text-muted-foreground',
-  compiled: 'text-yellow-400',
-  training: 'text-yellow-400',
-  trained: 'text-green-400',
-  failed: 'text-red-400',
+const STATUS_BADGE: Record<MlModel['status'], { label: string; cls: string }> = {
+  draft:    { label: 'Draft',    cls: 'bg-slate-700 text-slate-300' },
+  training: { label: 'Training', cls: 'bg-yellow-500/20 text-yellow-300' },
+  trained:  { label: 'Trained',  cls: 'bg-green-500/20 text-green-400' },
+  failed:   { label: 'Failed',   cls: 'bg-red-500/20 text-red-400' },
+}
+
+function timeAgo(iso: string) {
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
+  if (diff < 60) return 'just now'
+  if (diff < 3600) return `${Math.floor(diff / 60)}m ago`
+  if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`
+  return `${Math.floor(diff / 86400)}d ago`
 }
 
 export default function MyModels() {
   const [models, setModels] = useState<MlModel[]>([])
   const [loading, setLoading] = useState(true)
+  const [search, setSearch] = useState('')
   const [showCreate, setShowCreate] = useState(false)
   const [newTitle, setNewTitle] = useState('')
   const [newDesc, setNewDesc] = useState('')
@@ -59,10 +67,15 @@ export default function MyModels() {
   }
 
   const handleDelete = async (e: MouseEvent, id: string) => {
-    e.stopPropagation() // don't navigate to process page when clicking delete
+    e.stopPropagation()
     await deleteModel(id)
     setModels(prev => prev.filter(m => m.id !== id))
   }
+
+  const filtered = models.filter(m =>
+    m.title.toLowerCase().includes(search.toLowerCase()) ||
+    m.description?.toLowerCase().includes(search.toLowerCase())
+  )
 
   if (loading) {
     return (
@@ -82,15 +95,28 @@ export default function MyModels() {
             {models.length} model{models.length !== 1 ? 's' : ''}
           </p>
         </div>
-        <Button onClick={() => setShowCreate(v => !v)}>
-          <Plus className="mr-1 h-4 w-4" />
+        <Button onClick={() => setShowCreate(v => !v)} className="gap-1">
+          <Plus className="h-4 w-4" />
           New Model
         </Button>
       </div>
 
+      {/* Search */}
+      {models.length > 0 && (
+        <div className="relative mb-6">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+          <Input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search models…"
+            className="pl-9"
+          />
+        </div>
+      )}
+
       {/* Create form */}
       {showCreate && (
-        <Card className="mb-6">
+        <Card className="mb-6 border-primary/30">
           <CardHeader>
             <CardTitle className="text-lg">New Model</CardTitle>
             <CardDescription>Configure and create your model</CardDescription>
@@ -144,43 +170,58 @@ export default function MyModels() {
           <BrainCircuit className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
           <p className="text-muted-foreground">No models yet. Create your first one.</p>
         </div>
+      ) : filtered.length === 0 ? (
+        <div className="rounded-lg border border-dashed border-border py-16 text-center">
+          <p className="text-muted-foreground">No models match "{search}".</p>
+        </div>
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
-          {models.map(model => (
-            <Card
-              key={model.id}
-              className="cursor-pointer transition-colors hover:border-primary/40"
-              onClick={() => navigate(`/process/${model.id}`)}
-            >
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between gap-2">
-                  <CardTitle className="text-base leading-tight">{model.title}</CardTitle>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 shrink-0 text-muted-foreground hover:text-red-400"
-                    onClick={e => handleDelete(e, model.id)}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-                {model.description && (
-                  <CardDescription className="line-clamp-2">{model.description}</CardDescription>
-                )}
-              </CardHeader>
-              <CardContent className="pb-4">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="flex items-center gap-1.5 text-muted-foreground">
-                    <BarChart3 className="h-3.5 w-3.5" />
-                    {MODEL_TYPE_LABELS[model.modelType]}
+          {filtered.map(model => {
+            const badge = STATUS_BADGE[model.status] ?? STATUS_BADGE.draft
+            return (
+              <Card
+                key={model.id}
+                className="cursor-pointer transition-all hover:border-primary/50 hover:shadow-[0_0_0_1px_hsl(var(--primary)/0.2)]"
+                onClick={() => navigate(`/process/${model.id}`)}
+              >
+                <CardHeader className="pb-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex-1 min-w-0">
+                      <CardTitle className="text-base leading-tight truncate">{model.title}</CardTitle>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-7 w-7 shrink-0 text-muted-foreground hover:text-red-400 hover:bg-red-500/10"
+                      onClick={e => handleDelete(e, model.id)}
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                  {model.description && (
+                    <CardDescription className="line-clamp-2 mt-1">{model.description}</CardDescription>
+                  )}
+                </CardHeader>
+
+                <CardContent className="pb-3">
+                  <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <BarChart3 className="h-3.5 w-3.5 text-primary/70" />
+                    <span>{MODEL_TYPE_LABELS[model.modelType]}</span>
+                  </div>
+                </CardContent>
+
+                <CardFooter className="pt-0 pb-3 flex items-center justify-between">
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${badge.cls}`}>
+                    {badge.label}
                   </span>
-                  <span className={`font-medium capitalize ${STATUS_CLASS[model.status]}`}>
-                    {model.status}
-                  </span>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <span>Updated {timeAgo(model.updatedAt)}</span>
+                    <ChevronRight className="h-3.5 w-3.5" />
+                  </div>
+                </CardFooter>
+              </Card>
+            )
+          })}
         </div>
       )}
     </div>

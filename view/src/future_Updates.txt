@@ -1,1 +1,0 @@
-- processing page deki model design use state ini bölünce daha efficient ne kadr olur.

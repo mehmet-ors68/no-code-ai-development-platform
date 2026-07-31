@@ -33,7 +33,6 @@ export const saveExperiment = async (
     metrics: Record<string, unknown>
     status: 'completed' | 'failed'
     durationMs: number
-    modelB64?: string
   }
 ): Promise<void> => {
   await client.post(`/models/${modelId}/experiments`, data)
