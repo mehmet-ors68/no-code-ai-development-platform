@@ -265,7 +265,7 @@ export default function Process() {
         <div className="rounded-lg border border-dashed border-border py-20 text-center">
           <BrainCircuit className="mx-auto mb-3 h-8 w-8 text-muted-foreground" />
           <p className="text-muted-foreground">
-            {modelType === 'DL' || modelType === 'neural_net' ? 'Deep Learning editor coming soon.' : `${modelType.toUpperCase()} support coming soon.`}
+            {modelType === 'DL' ? 'Deep Learning editor coming soon.' : `${modelType.toUpperCase()} support coming soon.`}
           </p>
         </div>
       )}
