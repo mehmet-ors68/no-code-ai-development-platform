@@ -13,7 +13,7 @@ services:
       - dl-network
 
   java-service:
-    build: ./java-service
+    image: plokoon68/ai-dev-platform-java-service:latest
     ports:
       - "8081:8081"
     env_file:
@@ -30,7 +30,7 @@ services:
       - dl-network
 
   go-gateway:
-    build: ./go-gateway
+    image: plokoon68/ai-dev-platform-go-gateway:latest
     ports:
       - "8080:8080"
     env_file:
@@ -49,7 +49,7 @@ services:
       - dl-network
 
   python-ml-service:
-    build: ./python-ml-service
+    image: plokoon68/ai-dev-platform-python-ml-service:latest
     ports:
       - "8000:8000"
     env_file:

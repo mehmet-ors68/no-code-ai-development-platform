@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"strings"
 
 	"dl-platform/gateway/internal/middleware"
 	"dl-platform/gateway/internal/proxy"
@@ -55,17 +56,19 @@ func main() {
 
 func corsMiddleware() gin.HandlerFunc {
 	allowed := map[string]bool{
-		"http://localhost:3000":                             true,
-		"http://localhost:3001":                             true,
-		"http://localhost:5173":                             true,
-		"https://plokoon68.github.io":                       true,
-		"https://neural-builder.vercel.app":                 true,
-		"https://deep-learning-framework-view.onrender.com": true,
+		"http://localhost:3000":                                        true,
+		"http://localhost:3001":                                        true,
+		"http://localhost:5173":                                        true,
+		"https://plokoon68.github.io":                                  true,
+		"https://neural-builder.vercel.app":                            true,
+		"https://deep-learning-framework-view.onrender.com":            true,
+		"https://no-code-ai-development-platform.pages.dev":            true,
 	}
 
 	return func(c *gin.Context) {
 		origin := c.Request.Header.Get("Origin")
-		if allowed[origin] {
+		isAllowed := allowed[origin] || strings.HasSuffix(origin, ".no-code-ai-development-platform.pages.dev")
+		if isAllowed {
 			c.Header("Access-Control-Allow-Origin", origin)
 			c.Header("Access-Control-Allow-Credentials", "true")
 			c.Header("Access-Control-Allow-Methods", "GET,POST,PUT,DELETE,OPTIONS")
@@ -73,7 +76,7 @@ func corsMiddleware() gin.HandlerFunc {
 		}
 
 		if c.Request.Method == "OPTIONS" {
-			if !allowed[origin] {
+			if !isAllowed {
 				c.AbortWithStatus(403)
 				return
 			}
