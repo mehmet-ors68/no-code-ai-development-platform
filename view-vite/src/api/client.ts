@@ -21,8 +21,8 @@ client.interceptors.response.use(
   res => res,
   err => {
     const url: string = err.config?.url ?? ''
-    const onAuthPage = window.location.pathname === '/login' || window.location.pathname === '/register'
-    if (err.response?.status === 401 && !url.includes('/auth/') && !onAuthPage) {
+    const onPublicPage = ['/', '/login', '/register'].includes(window.location.pathname)
+    if (err.response?.status === 401 && !url.includes('/auth/') && !onPublicPage) {
       window.location.href = '/login'
     }
     return Promise.reject(err)
