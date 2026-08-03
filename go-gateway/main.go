@@ -33,7 +33,7 @@ func main() {
 
 	// Protected — specific route must be declared before the /api/auth/* wildcard so Gin matches it first.
 	// Go handles this itself: no DB query, just reads the userID that RequireAuth already extracted from JWT.
-	r.GET("/api/auth/me", middleware.RequireAuth, func(c *gin.Context) {
+	r.GET("/api/me", middleware.RequireAuth, func(c *gin.Context) {
 		userID, _ := c.Get("userID")
 		c.JSON(http.StatusOK, gin.H{"userId": userID})
 	})

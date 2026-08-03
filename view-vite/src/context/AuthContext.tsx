@@ -12,7 +12,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // This way login/register pages can redirect authenticated users immediately,
   // regardless of which page the user lands on.
   useEffect(() => {
-    client.get('/auth/me')
+    client.get('/me')
       .then(() => setAuthStatus('authenticated'))
       .catch(() => setAuthStatus('unauthenticated'))
   }, [])
