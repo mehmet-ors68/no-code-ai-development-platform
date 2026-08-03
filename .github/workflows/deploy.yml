@@ -1,0 +1,53 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        service:
+          - name: go-gateway
+            image: plokoon68/ai-dev-platform-go-gateway
+          - name: java-service
+            image: plokoon68/ai-dev-platform-java-service
+          - name: python-ml-service
+            image: plokoon68/ai-dev-platform-python-ml-service
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v3
+        with:
+          username: plokoon68
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build and push ${{ matrix.service.name }}
+        uses: docker/build-push-action@v5
+        with:
+          context: ./${{ matrix.service.name }}
+          push: true
+          tags: ${{ matrix.service.image }}:latest
+          cache-from: type=gha,scope=${{ matrix.service.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service.name }}
+
+  restart-ec2:
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    steps:
+      - name: Pull and restart services on EC2
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_KEY }}
+          script: |
+            cd ~
+            docker-compose pull
+            docker-compose up -d
