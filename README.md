@@ -1,6 +1,9 @@
-# AI development Platform
+# No-Code AI Development Platform
 
-A no-code machine learning platform built with a microservice architecture. Users design neural networks or run classical ML models through a visual interface — no code required.
+A production-grade, no-code machine learning platform built with a microservice architecture. Users design model configurations, upload datasets, train classical ML models, and view training history — all through a browser without writing code.
+
+**Live:** [no-code-ai-development-platform.pages.dev](https://no-code-ai-development-platform.pages.dev)
+**API:** [ai-dev-platform.duckdns.org](https://ai-dev-platform.duckdns.org)
 
 Originally a custom C++ deep learning library (graduation project), now expanded into a production-grade, cloud-native platform.
 
@@ -52,33 +55,34 @@ Java Spring Boot :8081      Python FastAPI :8000
 | Database | PostgreSQL (Supabase) |
 | Cache / Queue | Redis 7 |
 | Container | Docker, Docker Compose |
-| Auth | JWT in httpOnly cookie |
-| Storage | AWS S3 (planned) |
+| Auth | JWT in httpOnly cookie (SameSite=None; Secure) |
+| File Storage | Supabase Storage |
+| Cloud | AWS EC2 (t3.micro, Ubuntu 24.04) |
+| TLS | Nginx + Let's Encrypt (certbot) |
+| DNS | DuckDNS (stable subdomain, Elastic IP) |
+| CI/CD | GitHub Actions → Docker Hub → EC2 |
 
 ---
 
 ## Current Status
 
 ### ✅ Working
-- **Go Gateway** — JWT middleware, HTTP routing to Java and Python services, CORS
-- **Java Spring Boot** — user registration/login (bcrypt + JWT), model CRUD (create/list/update/delete), ModelSpec versioning (immutable config rows)
-- **Python ML Service** — `/api/ml/train` (linear regression, logistic regression, random forest classifier/regressor), `/api/ml/predict`, model serialized as base64 pickle
+- **Go Gateway** — JWT middleware, HTTP routing to Java and Python services, CORS, `GET /api/me` lightweight auth check
+- **Java Spring Boot** — user registration/login (bcrypt + JWT, SameSite=None cookie for cross-origin), model CRUD, experiment history
+- **Python ML Service** — `/api/ml/train` (4 sklearn algorithms), `/api/ml/predict` (Supabase Storage), model file stored in Supabase Storage
 - **Redis** — running, wired to gateway
-- **PostgreSQL (Supabase)** — users, ml_models, model_specs tables live
-- **Docker Compose** — all services start with a single command
-- **React frontend** — Vite + TypeScript + shadcn/ui; auth flow (login/register), My Models page (CRUD)
-
-### 🔧 In Progress
-- React Process page — model training UI (layer designer for Keras, hyperparameter config for sklearn)
+- **MongoDB (Supabase)** — users, models, experiments
+- **Docker Compose** — all 4 services start with a single command
+- **React + TypeScript frontend** — auth flow, My Models page, Process page (train + history + predict)
+- **Production deployment** — AWS EC2 t3.micro, Nginx + Let's Encrypt, DuckDNS subdomain
+- **CI/CD** — GitHub Actions: build → Docker Hub → EC2 restart on every push to main
 
 ### 📋 Planned
-- TensorFlow/Keras endpoint in Python — accept layer config as JSON, train, stream epoch metrics
-- WebSocket proxy in Go Gateway — real-time training progress to React
-- Redis job queue — async training; POST /train returns jobId, worker picks it up
+- Async training via Redis job queue (POST /train returns jobId, Python worker consumes)
+- TensorFlow/Keras endpoint — accept layer config, train, stream epoch metrics via WebSocket
 - YOLO service — image upload → object detection
 - HuggingFace NLP — text classification, NER
-- AWS S3 — dataset and model file storage
-- Docker Compose production config with environment-specific overrides
+- Kafka for event-driven notifications (model.trained topic)
 
 ---
 
