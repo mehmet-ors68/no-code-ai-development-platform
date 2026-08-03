@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"net/http"
 	"os"
 	"strings"
 
@@ -29,6 +30,13 @@ func main() {
 	// Trust only loopback (dev) and Docker internal network (172.16-31.x, 10.x)
 	r.SetTrustedProxies([]string{"127.0.0.1", "::1", "172.16.0.0/12", "10.0.0.0/8"})
 	r.Use(corsMiddleware())
+
+	// Protected — specific route must be declared before the /api/auth/* wildcard so Gin matches it first.
+	// Go handles this itself: no DB query, just reads the userID that RequireAuth already extracted from JWT.
+	r.GET("/api/auth/me", middleware.RequireAuth, func(c *gin.Context) {
+		userID, _ := c.Get("userID")
+		c.JSON(http.StatusOK, gin.H{"userId": userID})
+	})
 
 	// Public routes — no JWT check (login / register handled by Java)
 	r.Any("/api/auth", proxy.To(javaURL))

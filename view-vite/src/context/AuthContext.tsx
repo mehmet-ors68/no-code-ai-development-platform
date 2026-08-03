@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
-import { fetchModels } from '@/api/models'
+import client from '@/api/client'
 import type { AuthContextType, AuthStatus } from '@/types'
 
 // Why null default: forces a runtime error if useAuth() is called outside AuthProvider.
@@ -12,7 +12,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // This way login/register pages can redirect authenticated users immediately,
   // regardless of which page the user lands on.
   useEffect(() => {
-    fetchModels()
+    client.get('/auth/me')
       .then(() => setAuthStatus('authenticated'))
       .catch(() => setAuthStatus('unauthenticated'))
   }, [])
