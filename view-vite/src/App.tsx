@@ -6,6 +6,7 @@ import Landing from '@/pages/Landing'
 import Login from '@/pages/Login'
 import Register from '@/pages/Register'
 import MyModels from '@/pages/MyModels'
+import Datasets from '@/pages/Datasets'
 import Process from '@/pages/Process'
 
 function App() {
@@ -23,6 +24,10 @@ function App() {
         <Route
           path="/my-models"
           element={<PrivateRoute><MyModels /></PrivateRoute>}
+        />
+        <Route
+          path="/data"
+          element={<PrivateRoute><Datasets /></PrivateRoute>}
         />
         <Route
           path="/process/:id"

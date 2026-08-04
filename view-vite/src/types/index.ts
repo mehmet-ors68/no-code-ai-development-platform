@@ -9,6 +9,22 @@ export interface MlModel {
   updatedAt: string
 }
 
+export interface TabularDataset {
+  kind: 'tabular'
+  id: string
+  userId: string
+  name: string
+  rowCount: number
+  columnCount: number
+  columns: string[]
+  fileUrl: string
+  createdAt: string
+}
+
+// Union grows as new modalities are actually built — e.g. | ImageDataset | VideoDataset.
+// Not stubbing those out now: their real shape depends on the YOLO/NLP pipelines that don't exist yet.
+export type Dataset = TabularDataset
+
 export interface ModelSpec {
   id: string
   version: number

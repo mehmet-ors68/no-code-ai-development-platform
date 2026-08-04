@@ -26,6 +26,9 @@ export default function Navbar() {
           {authStatus === 'loading' ? null : authStatus === 'authenticated' ? (
             <>
               <Button variant="ghost" size="sm" asChild>
+                <Link to="/data">Data</Link>
+              </Button>
+              <Button variant="ghost" size="sm" asChild>
                 <Link to="/my-models">My Models</Link>
               </Button>
               <Button
