@@ -23,6 +23,9 @@ services:
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/healthz"]
       interval: 10s
+      # Poll fast only while booting — Spring needs ~10s, and go-gateway/python
+      # are gated on this check. Steady-state cost stays at one curl per 10s.
+      start_interval: 2s
       timeout: 5s
       retries: 5
       start_period: 45s
@@ -54,8 +57,14 @@ services:
       - "8000:8000"
     env_file:
       - .env
+    environment:
+      # Python calls Java directly over the internal network when saving dataset
+      # metadata — the browser is not in that path.
+      - JAVA_SERVICE_URL=http://java-service:8081
     depends_on:
       redis:
+        condition: service_healthy
+      java-service:
         condition: service_healthy
     networks:
       - dl-network

@@ -48,6 +48,9 @@ func main() {
 	{
 		protected.Any("/api/models",        proxy.To(javaURL))
 		protected.Any("/api/models/*path",  proxy.To(javaURL))
+		// Dataset rows live in Java; the upload itself goes to Python via /api/ml/datasets
+		protected.Any("/api/datasets",       proxy.To(javaURL))
+		protected.Any("/api/datasets/*path", proxy.To(javaURL))
 		protected.Any("/api/process",       proxy.To(javaURL))
 		protected.Any("/api/process/*path", proxy.To(javaURL))
 		protected.Any("/api/ml",            proxy.To(pythonURL))

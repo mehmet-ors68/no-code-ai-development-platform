@@ -50,7 +50,7 @@ Java Spring Boot :8081      Python FastAPI :8000
 |-------|-----------|
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS, shadcn/ui |
 | API Gateway | Go (Gin), JWT validation, Redis rate limiting |
-| Backend | Java 21, Spring Boot 3, Spring Security, Spring Data JPA |
+| Backend | Java 21, Spring Boot 4, Spring Security, Spring Data JPA |
 | ML Service | Python 3.12, FastAPI, scikit-learn, TensorFlow/Keras (planned) |
 | Database | PostgreSQL (Supabase) |
 | Cache / Queue | Redis 7 |
@@ -71,7 +71,7 @@ Java Spring Boot :8081      Python FastAPI :8000
 - **Java Spring Boot** — user registration/login (bcrypt + JWT, SameSite=None cookie for cross-origin), model CRUD, experiment history
 - **Python ML Service** — `/api/ml/train` (4 sklearn algorithms), `/api/ml/predict` (Supabase Storage), model file stored in Supabase Storage
 - **Redis** — running, wired to gateway
-- **MongoDB (Supabase)** — users, models, experiments
+- **PostgreSQL (Supabase)** — users, models, model specs, experiments
 - **Docker Compose** — all 4 services start with a single command
 - **React + TypeScript frontend** — auth flow, My Models page, Process page (train + history + predict)
 - **Production deployment** — AWS EC2 t3.micro, Nginx + Let's Encrypt, DuckDNS subdomain
@@ -212,7 +212,7 @@ POST   /api/models/:id/specs         { modelType, config, datasetPath }
 
 ```
 POST /api/ml/train      { model_type, dataset, target_column, hyperparameters?, test_size? }
-POST /api/ml/predict    { model_b64, data }
+POST /api/ml/predict    { model_url, data }
 ```
 
 **Supported `model_type` values:** `linear_regression`, `logistic_regression`, `random_forest_classifier`, `random_forest_regressor`
@@ -221,7 +221,7 @@ POST /api/ml/predict    { model_b64, data }
 ```json
 {
   "metrics": { "accuracy": 0.95 },
-  "model_b64": "<base64-encoded pickle — store this to call /predict later>"
+  "model_url": "<Supabase Storage URL — pass this to /predict later>"
 }
 ```
 
@@ -239,7 +239,7 @@ POST /api/ml/predict    { model_b64, data }
 
 **ModelSpec versioning** — specs are immutable rows. Saving a new config creates a new row with `version + 1` and `is_active = true`; previous rows are set to `is_active = false`. Enables full config history without soft deletes.
 
-**Python returns model as base64 pickle** — the ML service is stateless. The caller (React → Gateway → Python) receives the serialized model and decides where to store it (currently in-memory for demo; AWS S3 in roadmap). No server-side model state to manage.
+**Python owns model file storage** — the trained model is serialized with joblib and uploaded to Supabase Storage by the ML service itself, which returns only a URL. The service that produces a file is the service that stores it: Java never handles file bytes, it just persists the URL alongside the experiment row. Keeps large payloads off the Gateway and out of the database.
 
 ---
 

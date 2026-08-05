@@ -1,6 +1,5 @@
 import io
 import uuid
-import os
 import joblib
 import requests as req_lib
 
@@ -8,28 +7,17 @@ import numpy as np
 import pandas as pd
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict
-from supabase import create_client, Client
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
 from sklearn.preprocessing import LabelEncoder
 
+from storage import get_supabase
+
 router = APIRouter()
 
 BUCKET = "ml-models"
-
-_supabase: Client | None = None
-
-def get_supabase() -> Client:
-    global _supabase
-    if _supabase is None:
-        url = os.environ.get("SUPABASE_URL")
-        key = os.environ.get("SUPABASE_SERVICE_KEY")
-        if not url or not key:
-            raise HTTPException(status_code=500, detail="Supabase storage not configured")
-        _supabase = create_client(url, key)
-    return _supabase
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
