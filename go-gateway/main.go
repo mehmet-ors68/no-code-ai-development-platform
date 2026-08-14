@@ -57,9 +57,14 @@ func main() {
 		protected.Any("/api/ml/*path",      proxy.To(pythonURL))
 	}
 
-	r.GET("/healthz", func(c *gin.Context) {
+	// Gin registers methods explicitly — unlike Express, a GET route does not
+	// answer HEAD. Uptime monitors and load balancer health checks commonly
+	// probe with HEAD, so register both.
+	healthz := func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok", "service": "go-gateway"})
-	})
+	}
+	r.GET("/healthz", healthz)
+	r.HEAD("/healthz", healthz)
 
 	log.Printf("Go Gateway running on :%s  →  java=%s  python=%s", port, javaURL, pythonURL)
 	r.Run(":" + port)
