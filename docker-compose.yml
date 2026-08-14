@@ -2,6 +2,7 @@ services:
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "6379:6379"
     healthcheck:
@@ -14,6 +15,7 @@ services:
 
   java-service:
     image: plokoon68/ai-dev-platform-java-service:latest
+    restart: unless-stopped
     ports:
       - "8081:8081"
     env_file:
@@ -34,6 +36,7 @@ services:
 
   go-gateway:
     image: plokoon68/ai-dev-platform-go-gateway:latest
+    restart: unless-stopped
     ports:
       - "8080:8080"
     env_file:
@@ -53,6 +56,7 @@ services:
 
   python-ml-service:
     image: plokoon68/ai-dev-platform-python-ml-service:latest
+    restart: unless-stopped
     ports:
       - "8000:8000"
     env_file:
