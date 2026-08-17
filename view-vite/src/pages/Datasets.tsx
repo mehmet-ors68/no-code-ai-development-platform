@@ -39,7 +39,7 @@ export default function Datasets() {
           rowCount: parsed.data.length,
           columnCount: columns.length,
           columns,
-          fileUrl: '',
+          fileKey: '',
           createdAt: new Date().toISOString(),
         }
         setDatasets(prev => [newDataset, ...prev])

@@ -12,9 +12,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
-// Rows are created by python-ml-service (it uploads the file to Storage first, then
-// calls POST here over the internal Docker network); read and deleted by the frontend
-// through Go Gateway. Java never touches the file itself — it only stores the URL.
+// Rows are created and deleted by python-ml-service over the internal Docker network —
+// it owns every Storage interaction, so it uploads the file before POSTing here and
+// removes the object before calling DELETE here. Java never touches the file itself; it
+// stores only the object path (fileKey) and the ownership record.
 //
 // X-User-ID is injected by Go Gateway after JWT validation. Python forwards the same
 // header it received, so ownership is preserved regardless of which service calls us.
@@ -60,15 +61,15 @@ public class DatasetController {
         dataset.setRowCount(req.rowCount());
         dataset.setColumnCount(req.columnCount());
         dataset.setColumns(req.columns());
-        dataset.setFileUrl(req.fileUrl());
+        dataset.setFileKey(req.fileKey());
         dataset.setUserId(UUID.fromString(userId));
 
         return ResponseEntity.status(HttpStatus.CREATED).body(datasetRepository.save(dataset));
     }
 
-    // DELETE /api/datasets/:id
-    // Known gap: this drops the row but leaves the file in Supabase Storage. Cleaning it
-    // up means going through Python (the only service that talks to Storage) — deferred.
+    // DELETE /api/datasets/:id — called by python-ml-service AFTER it has removed the
+    // object from Storage. The frontend calls DELETE /api/ml/datasets/:id instead, so the
+    // file and the row always go together and no orphans accumulate.
     @DeleteMapping("/{id}")
     public ResponseEntity<?> deleteDataset(
             @PathVariable UUID id,

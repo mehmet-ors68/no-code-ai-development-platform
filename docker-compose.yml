@@ -3,8 +3,12 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
+    # Loopback-only. Services reach each other by name over dl-network, so nothing
+    # here needs a public binding — publishing to 0.0.0.0 would put an unauthenticated
+    # Redis on the internet. Keeping the mapping (rather than dropping it) preserves
+    # redis-cli from an SSH session.
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -16,8 +20,10 @@ services:
   java-service:
     image: plokoon68/ai-dev-platform-java-service:latest
     restart: unless-stopped
+    # Loopback-only: Java trusts X-User-ID unconditionally, so anything that can reach
+    # it directly can impersonate any user. Only the Gateway may talk to it.
     ports:
-      - "8081:8081"
+      - "127.0.0.1:8081:8081"
     env_file:
       - .env
     environment:

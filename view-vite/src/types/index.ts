@@ -17,7 +17,9 @@ export interface TabularDataset {
   rowCount: number
   columnCount: number
   columns: string[]
-  fileUrl: string
+  // Object path in the private bucket, not a link. Download goes through
+  // GET /api/ml/datasets/:id/download, which redirects to a short-lived signed URL.
+  fileKey: string
   createdAt: string
 }
 

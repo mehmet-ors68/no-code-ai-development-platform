@@ -82,7 +82,9 @@ jobs:
           cache-to: type=gha,mode=max,scope=python
 
   restart-ec2:
-    needs: [build-go, build-java, build-python]
+    # `changes` is needed here too — without it this job can't read the filter
+    # outputs and has to pull every image blindly.
+    needs: [changes, build-go, build-java, build-python]
     if: |
       always() &&
       (needs.build-go.result == 'success' ||
@@ -91,11 +93,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: appleboy/ssh-action@v1
+        env:
+          GO_CHANGED: ${{ needs.changes.outputs.go }}
+          JAVA_CHANGED: ${{ needs.changes.outputs.java }}
+          PYTHON_CHANGED: ${{ needs.changes.outputs.python }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ubuntu
           key: ${{ secrets.EC2_KEY }}
+          envs: GO_CHANGED,JAVA_CHANGED,PYTHON_CHANGED
           script: |
             cd ~
-            docker-compose pull
+            # Pull only what was rebuilt. A blanket `docker-compose pull` re-checks
+            # the ~1.5GB python image on every deploy, even for a one-line Go change.
+            if [ "$GO_CHANGED" = "true" ]; then docker-compose pull go-gateway; fi
+            if [ "$JAVA_CHANGED" = "true" ]; then docker-compose pull java-service; fi
+            if [ "$PYTHON_CHANGED" = "true" ]; then docker-compose pull python-ml-service; fi
             docker-compose up -d
+            # Each deploy orphans the previous :latest as a dangling image. Left alone
+            # this fills an 8GB disk. -f removes only dangling ones, never in-use images.
+            docker image prune -f
+
+      # Until now a green check only meant "the SSH command ran". This makes it mean
+      # "the gateway is actually answering".
+      - name: Smoke test
+        run: |
+          sleep 30
+          curl -fsS https://ai-dev-platform.duckdns.org/healthz

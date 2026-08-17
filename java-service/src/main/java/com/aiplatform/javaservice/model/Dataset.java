@@ -12,7 +12,7 @@ import java.util.UUID;
 
 // One row per uploaded dataset. Every upload becomes a row here — there's no separate
 // "ad-hoc file" path. A "repo" is just a Dataset that happens to get more versions later;
-// today it's always exactly one file (fileUrl), versioning is a future column, not a future table.
+// today it's always exactly one file (fileKey), versioning is a future column, not a future table.
 @Data
 @Entity
 @Table(name = "datasets")
@@ -35,9 +35,12 @@ public class Dataset {
     @Column(columnDefinition = "jsonb", nullable = false)
     private List<String> columns;
 
-    // Supabase Storage public URL for the raw CSV
-    @Column(nullable = false, length = 500)
-    private String fileUrl;
+    // Object path inside the PRIVATE "datasets" bucket, e.g. raw/<uuid>.csv.
+    // Deliberately not a URL: a stored public URL would be readable by anyone who
+    // ever saw it, forever, bypassing the ownership check below. Download links are
+    // minted per request with a short expiry.
+    @Column(nullable = false, length = 255)
+    private String fileKey;
 
     @Column(nullable = false)
     private UUID userId;

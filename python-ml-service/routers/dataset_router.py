@@ -5,6 +5,7 @@ import uuid
 import pandas as pd
 import requests as req_lib
 from fastapi import APIRouter, File, Form, Header, HTTPException, UploadFile
+from fastapi.responses import RedirectResponse
 
 from storage import get_supabase
 
@@ -47,14 +48,14 @@ async def upload_dataset(
         file=raw,
         file_options={"content-type": "text/csv"},
     )
-    file_url = sb.storage.from_(BUCKET).get_public_url(file_key)
-
+    # Store the object path, never a URL. get_public_url() would hand back a link that
+    # works forever for anyone who sees it, silently bypassing Java's ownership check.
     payload = {
         "name": name,
         "rowCount": len(df),
         "columnCount": len(df.columns),
         "columns": [str(c) for c in df.columns],
-        "fileUrl": file_url,
+        "fileKey": file_key,
     }
 
     try:
@@ -80,3 +81,65 @@ async def upload_dataset(
     # Java owns the Dataset shape (id, createdAt, …) — pass its response straight
     # through rather than redefining the same fields a third time here.
     return resp.json()
+
+
+def _fetch_owned_dataset(dataset_id: str, x_user_id: str) -> dict:
+    """Ask Java for the dataset, relying on ITS ownership check.
+
+    Java already returns 403 when the row belongs to someone else and 404 when it
+    doesn't exist. Re-implementing that here would mean two copies of the same rule
+    drifting apart. We collapse both cases to 404 on the way out so an attacker
+    can't tell "exists but isn't yours" from "doesn't exist" — the same reason
+    GitHub returns Not Found for private repos.
+    """
+    resp = req_lib.get(
+        f"{JAVA_SERVICE_URL}/api/datasets/{dataset_id}",
+        headers={"X-User-ID": x_user_id},
+        timeout=10,
+    )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=404, detail="Dataset not found")
+    return resp.json()
+
+
+@router.get("/datasets/{dataset_id}/download")
+async def download_dataset(
+    dataset_id: str,
+    x_user_id: str = Header(alias="X-User-ID"),
+):
+    meta = _fetch_owned_dataset(dataset_id, x_user_id)
+
+    # Redirect rather than stream the bytes through this service: the browser fetches
+    # straight from Supabase, so a 2GB dataset never crosses the EC2 box. The URL this
+    # mints is never stored anywhere and dies in 60 seconds — long enough for the
+    # browser to follow the redirect, short enough to be worthless if it leaks.
+    sb = get_supabase()
+    signed = sb.storage.from_(BUCKET).create_signed_url(meta["fileKey"], expires_in=60)
+    return RedirectResponse(signed["signedURL"], status_code=302)
+
+
+@router.delete("/datasets/{dataset_id}")
+async def delete_dataset(
+    dataset_id: str,
+    x_user_id: str = Header(alias="X-User-ID"),
+):
+    meta = _fetch_owned_dataset(dataset_id, x_user_id)
+
+    sb = get_supabase()
+    # Object first, row second. If the second step fails we're left with a row whose
+    # file is gone — visible to the user and fixable. The reverse order leaves a file
+    # no row points at: invisible, unreachable, and billed for forever.
+    try:
+        sb.storage.from_(BUCKET).remove([meta["fileKey"]])
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Failed to remove stored file: {e}")
+
+    resp = req_lib.delete(
+        f"{JAVA_SERVICE_URL}/api/datasets/{dataset_id}",
+        headers={"X-User-ID": x_user_id},
+        timeout=10,
+    )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail="File removed but metadata delete failed")
+
+    return {"message": "Dataset deleted"}
