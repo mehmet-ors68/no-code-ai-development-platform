@@ -212,7 +212,7 @@ public class ModelController {
         exp.setMetrics(req.metrics());
         exp.setStatus(req.status() != null ? req.status() : "completed");
         exp.setDurationMs(req.durationMs());
-        exp.setModelFilePath(req.modelUrl());
+        exp.setModelFilePath(req.modelKey());
 
         experimentRepository.save(exp);
 

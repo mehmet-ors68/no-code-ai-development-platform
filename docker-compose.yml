@@ -43,8 +43,11 @@ services:
   go-gateway:
     image: plokoon68/ai-dev-platform-go-gateway:latest
     restart: unless-stopped
+    # Loopback-only: Nginx (on the host) proxies to 127.0.0.1:8080 and terminates TLS.
+    # Published on 0.0.0.0 this served the whole API over plain HTTP on :8080, so a
+    # login POST could be read off the wire.
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     env_file:
       - .env
     environment:
@@ -63,8 +66,9 @@ services:
   python-ml-service:
     image: plokoon68/ai-dev-platform-python-ml-service:latest
     restart: unless-stopped
+    # Loopback-only — same reasoning as java-service: X-User-ID is trusted, not verified.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     env_file:
       - .env
     environment:

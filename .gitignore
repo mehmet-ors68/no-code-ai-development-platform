@@ -23,8 +23,9 @@ java-service/target/
 *.jar
 
 # Python
-python-ml-service/__pycache__/
-python-ml-service/*.pyc
+# Nested too - routers/__pycache__ slipped past the non-recursive pattern.
+**/__pycache__/
+**/*.pyc
 python-ml-service/venv/
 python-ml-service/.venv/
 

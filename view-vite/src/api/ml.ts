@@ -16,7 +16,7 @@ export interface TrainRequest {
 
 export interface TrainResult {
   metrics: Record<string, number>
-  model_url: string  // Supabase Storage public URL
+  model_key: string  // object path in the private "ml-models" bucket, not a link
 }
 
 export const trainSklearn = async (req: TrainRequest): Promise<TrainResult> => {
@@ -24,7 +24,7 @@ export const trainSklearn = async (req: TrainRequest): Promise<TrainResult> => {
   return res.data
 }
 
-export const predictSklearn = async (modelUrl: string, data: Record<string, unknown>[]): Promise<unknown[]> => {
-  const res = await client.post<{ predictions: unknown[] }>('/ml/predict', { model_url: modelUrl, data }, { timeout: 30_000 })
+export const predictSklearn = async (modelKey: string, data: Record<string, unknown>[]): Promise<unknown[]> => {
+  const res = await client.post<{ predictions: unknown[] }>('/ml/predict', { model_key: modelKey, data }, { timeout: 30_000 })
   return res.data.predictions
 }

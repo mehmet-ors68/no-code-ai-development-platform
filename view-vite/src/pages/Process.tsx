@@ -165,7 +165,7 @@ export default function Process() {
         metrics: res.metrics,
         status: 'completed',
         durationMs,
-        modelUrl: res.model_url,
+        modelKey: res.model_key,
       })
         .then(() => Promise.all([fetchExperiments(id), fetchModel(id)]))
         .then(([exps, updated]) => {

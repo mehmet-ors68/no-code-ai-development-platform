@@ -33,7 +33,7 @@ export const saveExperiment = async (
     metrics: Record<string, unknown>
     status: 'completed' | 'failed'
     durationMs: number
-    modelUrl?: string
+    modelKey?: string
   }
 ): Promise<void> => {
   await client.post(`/models/${modelId}/experiments`, data)

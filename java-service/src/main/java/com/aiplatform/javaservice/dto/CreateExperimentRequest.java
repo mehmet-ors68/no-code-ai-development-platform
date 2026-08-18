@@ -7,5 +7,6 @@ public record CreateExperimentRequest(
     Map<String, Object> metrics,
     String status,
     Integer durationMs,
-    String modelUrl
+    // Object path in the private "ml-models" bucket, e.g. models/<uuid>.joblib
+    String modelKey
 ) {}

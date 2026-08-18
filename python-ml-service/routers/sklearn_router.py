@@ -1,7 +1,6 @@
 import io
 import uuid
 import joblib
-import requests as req_lib
 
 import numpy as np
 import pandas as pd
@@ -33,11 +32,11 @@ class TrainRequest(BaseModel):
 class TrainResponse(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
     metrics: dict
-    model_url: str  # Supabase Storage public URL
+    model_key: str  # object path inside the private "ml-models" bucket
 
 class PredictRequest(BaseModel):
     model_config = ConfigDict(protected_namespaces=())
-    model_url: str  # public Supabase Storage URL
+    model_key: str  # object path inside the private "ml-models" bucket
     data: list[dict]
 
 
@@ -78,17 +77,20 @@ def train(req: TrainRequest):
         file=model_bytes,
         file_options={"content-type": "application/octet-stream"},
     )
-    model_url = sb.storage.from_(BUCKET).get_public_url(file_key)
-
-    return TrainResponse(metrics=metrics, model_url=model_url)
+    # Return the object path, not a URL. The bucket is private, and everything that
+    # needs these bytes (predict, and later deployment) runs server-side with the
+    # service key - so none of them ever needed a URL.
+    return TrainResponse(metrics=metrics, model_key=file_key)
 
 
 @router.post("/predict")
 def predict(req: PredictRequest):
+    # Read straight from Storage with the service key. The old version fetched its
+    # own file back over public HTTP - a needless round trip that also broke the
+    # instant the bucket stopped being public.
     try:
-        resp = req_lib.get(req.model_url, timeout=30)
-        resp.raise_for_status()
-        payload = joblib.load(io.BytesIO(resp.content))
+        model_bytes = get_supabase().storage.from_(BUCKET).download(req.model_key)
+        payload = joblib.load(io.BytesIO(model_bytes))
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Failed to load model: {e}")
 
