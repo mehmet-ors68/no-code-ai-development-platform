@@ -32,3 +32,9 @@ python-ml-service/.venv/
 # OS
 .DS_Store
 Thumbs.db
+
+# Local API-testing scratch files. login.json holds a plaintext password and
+# cookies.txt a live session JWT; neither belongs in a public repo.
+login.json
+cookies.txt
+test.csv

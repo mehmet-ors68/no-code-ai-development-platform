@@ -7,3 +7,6 @@ pydantic==2.9.2
 supabase==2.10.0
 joblib==1.4.2
 requests==2.32.3
+# Required by FastAPI to parse multipart/form-data (File/Form params in dataset_router).
+# FastAPI does not pull this in itself — without it the app fails at IMPORT time, not request time.
+python-multipart==0.0.12
