@@ -24,7 +24,9 @@ export const trainSklearn = async (req: TrainRequest): Promise<TrainResult> => {
   return res.data
 }
 
-export const predictSklearn = async (modelKey: string, data: Record<string, unknown>[]): Promise<unknown[]> => {
-  const res = await client.post<{ predictions: unknown[] }>('/ml/predict', { model_key: modelKey, data }, { timeout: 30_000 })
+// Names the model, not its storage path. The old /ml/predict took a model_key straight
+// from here and ran whatever it pointed at, with nothing checking whose model it was.
+export const predictSklearn = async (modelId: string, data: Record<string, unknown>[]): Promise<unknown[]> => {
+  const res = await client.post<{ predictions: unknown[] }>(`/ml/models/${modelId}/predict`, { data }, { timeout: 30_000 })
   return res.data.predictions
 }

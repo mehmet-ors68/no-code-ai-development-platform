@@ -47,3 +47,9 @@ export const fetchExperiments = async (modelId: string): Promise<Experiment[]> =
 export const deleteExperiment = async (modelId: string, experimentId: string): Promise<void> => {
   await client.delete(`/models/${modelId}/experiments/${experimentId}`)
 }
+
+// Choose which trained run this model serves. Switching is the only operation — there
+// is no undeploy, because a model either answers with something or is not deployed yet.
+export const deployExperiment = async (modelId: string, experimentId: string): Promise<void> => {
+  await client.put(`/models/${modelId}/deployment`, { experimentId })
+}
