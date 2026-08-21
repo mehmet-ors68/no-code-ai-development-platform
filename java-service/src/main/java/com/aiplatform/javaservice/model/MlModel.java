@@ -36,6 +36,12 @@ public class MlModel {
     @Column(nullable = false)
     private UUID userId;
 
+    // Which trained artifact this model serves. Null until a run completes.
+    // Deliberately a plain UUID, not a @ManyToOne: a foreign key here would make
+    // deleteExperiment fail on whichever run happens to be deployed. The pointer is
+    // cleared explicitly instead — see deleteExperiment.
+    private UUID deployedExperimentId;
+
     @CreationTimestamp
     @Column(updatable = false)
     private Instant createdAt;
