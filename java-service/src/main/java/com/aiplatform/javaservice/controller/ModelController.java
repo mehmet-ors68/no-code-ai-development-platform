@@ -7,6 +7,7 @@ import com.aiplatform.javaservice.dto.UpdateModelRequest;
 import com.aiplatform.javaservice.model.Experiment;
 import com.aiplatform.javaservice.model.MlModel;
 import com.aiplatform.javaservice.model.ModelSpec;
+import com.aiplatform.javaservice.repository.ApiKeyRepository;
 import com.aiplatform.javaservice.repository.ExperimentRepository;
 import com.aiplatform.javaservice.repository.MlModelRepository;
 import com.aiplatform.javaservice.repository.ModelSpecRepository;
@@ -30,6 +31,7 @@ public class ModelController {
     private final MlModelRepository mlModelRepository;
     private final ModelSpecRepository modelSpecRepository;
     private final ExperimentRepository experimentRepository;
+    private final ApiKeyRepository apiKeyRepository;
 
     // GET /api/models — list all models for the authenticated user (lightweight, no spec)
     @GetMapping
@@ -99,6 +101,7 @@ public class ModelController {
 
     // DELETE /api/models/:id — cascade deletes specs + experiments via FK constraints
     @DeleteMapping("/{id}")
+    @Transactional
     public ResponseEntity<Map<String, String>> deleteModel(
             @PathVariable UUID id,
             @RequestHeader("X-User-ID") String userId) {
@@ -106,6 +109,13 @@ public class ModelController {
         MlModel model = mlModelRepository.findById(id).orElse(null);
         if (model == null) return ResponseEntity.notFound().build();
         if (!model.getUserId().equals(UUID.fromString(userId))) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+
+        // The specs/experiments cascade was applied to Postgres by hand; api_keys was
+        // created by ddl-auto, which writes the foreign key with the default NO ACTION.
+        // Without this line, deleting any model that ever had a key fails on a
+        // constraint violation. Doing it in code rather than out-of-band SQL means a
+        // fresh clone behaves the same as the deployed database.
+        apiKeyRepository.deleteByModelId(id);
 
         mlModelRepository.deleteById(id);
         // ModelSpec and Experiment rows deleted automatically by ON DELETE CASCADE
