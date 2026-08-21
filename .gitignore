@@ -38,3 +38,6 @@ Thumbs.db
 login.json
 cookies.txt
 test.csv
+
+# Machine-local Claude Code config (memory exclusions, auto-memory toggle).
+.claude/settings.local.json

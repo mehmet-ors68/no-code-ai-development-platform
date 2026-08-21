@@ -10,7 +10,6 @@ export interface MlModel {
 }
 
 export interface TabularDataset {
-  kind: 'tabular'
   id: string
   userId: string
   name: string
@@ -23,8 +22,9 @@ export interface TabularDataset {
   createdAt: string
 }
 
-// Union grows as new modalities are actually built — e.g. | ImageDataset | VideoDataset.
-// Not stubbing those out now: their real shape depends on the YOLO/NLP pipelines that don't exist yet.
+// Alias, not a union, until a second modality actually exists. When image/video datasets
+// arrive they will need a discriminant field the API really sends — inventing one now
+// meant every row carried a `kind` the backend never wrote and no component ever read.
 export type Dataset = TabularDataset
 
 export interface ModelSpec {
