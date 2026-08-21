@@ -57,6 +57,20 @@ func main() {
 		protected.Any("/api/ml/*path",      proxy.To(pythonURL))
 	}
 
+	// External routes — no browser session. RequireAPIKey resolves an X-API-Key header
+	// to its owner and its one model by asking Java, then sets both headers downstream.
+	//
+	// Listed one by one rather than behind a wildcard: this is the only group reachable
+	// without a cookie, so what it exposes should be readable in full at a glance. It
+	// also cannot be a wildcard under /api/ml — Gin panics at startup when a catch-all
+	// and a specific route share a prefix, in either declaration order.
+	external := r.Group("/")
+	external.Use(middleware.RequireAPIKey)
+	{
+		external.POST("/api/serve/predict", proxy.To(pythonURL))
+		external.GET("/api/serve/schema",   proxy.To(pythonURL))
+	}
+
 	// Gin registers methods explicitly — unlike Express, a GET route does not
 	// answer HEAD. Uptime monitors and load balancer health checks commonly
 	// probe with HEAD, so register both.
