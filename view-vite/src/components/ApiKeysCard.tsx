@@ -113,8 +113,9 @@ export default function ApiKeysCard({ modelId, hasDeployment }: Props) {
               </div>
               <p className="text-xs text-muted-foreground">
                 Send it as <code className="font-mono">X-API-Key</code> to{' '}
-                <code className="font-mono break-all">{GATEWAY_URL}/api/serve/predict</code>. Call{' '}
-                <code className="font-mono">/api/serve/schema</code> to see which columns it expects.
+                <code className="font-mono break-all">{GATEWAY_URL}/serve/predict</code>. Call{' '}
+                <code className="font-mono break-all">{GATEWAY_URL}/serve/schema</code> to see which
+                columns it expects.
               </p>
             </div>
           )}
