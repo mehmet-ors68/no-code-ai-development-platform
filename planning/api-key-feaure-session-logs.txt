@@ -1,0 +1,3391 @@
+ ▐▛███▛█   Claude Code v2.1.238
+▝▜██████▀  Opus 5 · Claude Pro
+  ▝▝ ▝▝    ~\OneDrive\Masaüstü\projeler\new projects\DL project\DL public
+
+
+❯ /rename model serve feature 
+  ⎿  Session renamed to: model serve feature
+
+❯ /context 
+  ⎿  Context Usage
+     ⛀ ⛁ ⛁ ⛁ ⛁ ⛀ ⛀ ⛀ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   Opus 5
+     ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   claude-opus-5
+     ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   28.9k/1m tokens (3%)
+     ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ 
+     ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   Estimated usage by category
+     ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ System prompt: 3.3k tokens (0.3%)
+     ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ System tools: 20k tokens (2.0%)
+     ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ Memory files: 2.5k tokens (0.3%)
+     ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ Skills: 2.9k tokens (0.3%)
+     ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶ ⛶   ⛁ Messages: 124 tokens (0.0%)
+                                               ⛶ Free space: 971.1k (97.1%)
+
+     MCP tools · /mcp (loaded on-demand)
+     └ 6 tools · 0 tokens
+
+     Memory files · /memory
+     └ 2 files · 2.5k tokens
+
+     Skills · /skills
+     └ 20 skills · 2.9k tokens
+
+     /context all to expand
+
+❯ ▎ This session is for a time-boxed technical exercise and its transcript will 
+  be published in a public repository. Work only inside DL Public/. Read        
+  planning/BRIEF.md first — it ends with open questions I want to be pushed on. 
+  Do not read files in parent directories.                                      
+
+● I'll start by reading the brief.
+
+  Read 1 file (ctrl+o to expand)
+
+● Skill(grilling)
+  ⎿  Successfully loaded skill
+
+  Read 13 files, listed 1 directory, ran 4 shell commands (ctrl+o to expand)
+
+● Read the brief and the code it points at. Three things in the brief the code
+  contradicts — worth correcting first, because they change the answers.
+
+  1. "A new Python route needs no gateway change" is false for this feature. The
+  /api/ml/* wildcard is registered inside the protected group
+  (go-gateway/main.go:56-57), so every /api/ml/* route inherits RequireAuth —
+  and RequireAuth reads a cookie named token (internal/middleware/auth.go:14),
+  not an Authorization header. There is no bearer path anywhere in this stack
+  today. An external caller has neither a cookie nor a way to send one. This
+  feature touches main.go no matter which design wins; the only open question is
+  how much.
+
+  2. /api/ml/predict has no ownership check at all. It takes model_key verbatim
+  and downloads it with the service key (sklearn_router.py:87-95). Any logged-in
+  user holding any model_key can run any user's model. Being browser-only has
+  been hiding that. Whatever we expose must not inherit it.
+
+  3. There is no "the trained model" in the schema. MlModel carries no artifact
+  pointer. The bytes live in Experiment.modelFilePath (Experiment.java:46), and
+  a model has many experiments. "Serve model X" is ambiguous until we say which
+  run.
+
+  One piece of good news for the budget: ddl-auto: update (application.yml:11)
+  means a new JPA entity creates its own table on boot. No migration file, no
+  hand-written SQL.
+
+  ---
+
+  ❓ Q1 - Who the credential belongs to, and what revocation has to undo: The
+  brief frames this as trainer-vs-delegate. I think that's the wrong axis — it's
+  a docs question, not a code question. The code question is scope: does a
+  credential authorize the account (everything that user owns, forever) or one 
+  model?
+
+  If it authorizes the account, handing it to a contractor hands them every
+  model you will ever train, and revoking it breaks your own integrations too.
+  If it authorizes one model, "delegate" and "my own script" become the same
+  case, and revocation is precise.
+
+  ➡️ Credentials belong to a user but are scoped to a single model, and a user
+  can hold several. Delegation is then just "you hand someone the string,"
+  needing no extra machinery, and the brief's first open question dissolves.
+
+  ---
+
+  ❓ Q2 - What the credential is, and what we store: Three shapes. (a) Opaque
+  random key, hashed at rest. (b) A long-lived JWT signed with the existing
+  JWT_SECRET — zero storage, but unrevocable without a blocklist table, which is
+  the same table as (a) with worse properties. (c) HMAC request signing —
+  replay-resistant, and far more than a day of work on both ends.
+
+  For (a): the secret is 256 bits of real entropy, not a human password, so
+  bcrypt buys nothing. Store sha256(key) under a unique index and verify with
+  one indexed lookup. Keep a plaintext display prefix (dlp_a3f9…) so the UI can
+  tell keys apart, and show the full key exactly once at creation.
+
+  ➡️ (a). It is the only one of the three where "revoke" is a single DELETE and
+  the plaintext secret is genuinely not recoverable from our database.
+
+  ---
+
+  ❓ Q3 - Which service authenticates the external caller: This is the real
+  architectural fork, and I want you to push back on my answer.
+
+  Gateway verifies — a new public route group calls Java to check the key, then
+  sets X-User-ID and proxies to Python. Keeps the invariant every downstream
+  ownership check already assumes: X-User-ID is set by the gateway and is always
+  trustworthy. Cost: the gateway makes a DB-backed HTTP call per request, and
+  main.go:37 currently brags about doing no DB work.
+
+  Python verifies — the gateway just proxies a public path through, and Python
+  asks Java about the key, exactly as _fetch_owned_dataset already asks Java
+  about datasets. Keeps the gateway dumb. Cost: two trust boundaries instead of
+  one, and Python gains a route where X-User-ID is self-derived rather than
+  gateway-asserted — the invariant splinters, and the next person to add a route
+  has to know which kind they're writing.
+
+  ➡️ Gateway verifies. One trust boundary is worth one HTTP hop, and CLAUDE.md
+  already says the gateway is the contract. The per-request Java call with no
+  cache is a named production gap, not a design flaw at this budget.
+
+  ---
+
+  ❓ Q4 - What the caller names in the URL: Given fact 3 above, three
+  candidates. model_key — the raw storage path; leaks internals, can't be
+  revoked, and is exactly the hole in fact 2. Experiment id — precise, but the
+  user has never seen one and the UI doesn't surface it. Model id — the thing
+  that appears in MyModels.tsx, resolved server-side to the latest completed
+  experiment.
+
+  ➡️ POST /api/serve/{modelId}/predict, resolved server-side to the newest
+  completed experiment, with the key required to match that model id. The model
+  id in the path is redundant with a model-scoped key, and that redundancy is
+  what lets us give a clean "no such model" vs "not your model" answer. The cost
+  is that retraining silently changes what an external caller gets — pinned
+  versions are a deliberate cut, and it goes in the docs.
+
+  ---
+
+  Waiting on these before the next round. Downstream and deliberately not asked
+  yet: the error contract (including what happens when the caller's columns
+  don't match payload["features"] — today that's a 500, not a 400), how a key
+  gets created in the UI at all, rate limiting, and what gets cut to fit the
+  day.
+
+✻ Brewed for 2m 39s
+
+※ recap: Goal: design an external API so trained models can be called from outside the web UI. I've read the code and posted four grilling questions on credential scope, credential shape, where auth is checked, and URL shape. Next: your answers. (disable recaps in /config)
+
+❯ Nice catches. To go on with each:                                             
+  1. So previously, yes you are correct go gateway had only one type of         
+  middleware for authentications, which is via the jwt token stored in the      
+  cookie. No, what I think is, there should be another middleware and another   
+  path specifically for this new option "external call with api key in          
+  header?". this other middleware could be RequireAPIKey instead of RequireAuth 
+  maybe. So the architecture for this logic that came to my mind is:            
+  "protected := r.Group("/")                                                    
+  protected.Use(middleware.RequireAuth)                                         
+  {                                                                             
+      protected.POST("/api/ml/models/:modelId/predict", proxy.To(pythonURL))    
+      // ...mevcut route'lar...                                                 
+  }" for previous one, which is for UI call of predict, remains the same. We    
+  just add "external := r.Group("/")                                            
+  external.Use(middleware.RequireAPIKey)                                        
+  {                                                                             
+      external.POST("/api/serve/:modelId/predict", proxy.To(pythonURL))         
+  }                                                                             
+  " for the new option, and in python there will be 2 different controller to   
+  face these 2 endpoints: "# ── Kapı 1: tarayıcı (çerez)                        
+  ────────────────────────────────                                              
+  @ml_router.post("/models/{model_id}/predict")                                 
+  def predict_from_ui(model_id: str, req: PredictRequest,                       
+                      x_user_id: str = Header(...)):                            
+      return _run_prediction(model_id, req.data, x_user_id)                     
+                                                                                
+                                                                                
+  # ── Kapı 2: dışarısı (API anahtarı) ─────────────────────────                
+  @serve_router.post("/{model_id}/predict")                                     
+  def predict_from_api(model_id: str, req: PredictRequest,                      
+                       x_user_id: str = Header(...)):                           
+      return _run_prediction(model_id, req.data, x_user_id)" but only 1         
+  business logic used by both: "def _run_prediction(model_id: str, rows:        
+  list[dict], user_id: str) -> dict:                                            
+      _assert_model_owned(model_id, user_id)         # Java'ya sor              
+      experiment = _deployed_experiment(model_id)     # hangi dosya             
+      payload    = _load_model(experiment["modelFilePath"])                     
+      ...                                                                       
+      return {"predictions": [...]}". and by the way in the external api key    
+  call middleware in go, what one would probably ask java service so that java  
+  cancheck from the database if that api key is valid and exist, and return the 
+  user id that api key belongs to go service, so go can set that user id to     
+  header just like the auth middleware, and send the request to pytohn. what do 
+  you say, would that work well?                                                
+  2- about the  /api/ml/predict having no ownership, that previous version      
+  should be deleted I think. From now on for deployment, I don't think the user 
+  should face a predict option in UI right away. instead, as you know there     
+  will be different versions of the model that is being trained in the          
+  experiment, and in this list in the UI, each row (each version) will have a   
+  deplo button at the right side, so whichever user clicks, that version of the 
+  model will be deployed, and that button will be converted to (deployed) and   
+  not be clickable. if user clicks on another versions deploy button later, it  
+  will be changed. And predict will be on another tab, what do you think?       
+  3- I think I gave the answer for this in 2.                                   
+  Q1 - okay so you say each model will hve it's own api key? that sounds cool.  
+  Q2- "│ id  │    key_hash     │ key_prefix │ user_id │ model_id │              
+  ├─────┼─────────────────┼────────────┼─────────┼──────────┤                   
+  │ …   │ 9f86d081884c7d… │ dlp_a3f9   │ 7f3a-…  │ c81b-…   │                   
+  └─────┴─────────────────┴────────────┴─────────┴──────────┘" is this how java 
+  will store it in postgresql and everytime calculate the hash of recieved raw  
+  api key and compare it to the one in the databasse and return the modelid     
+  and user to go gateway? even maybe users can have labels for these ai keys as 
+  another column in this table doe sit make sense?                              
+  ▎ Q3 — gateway verifies, calling Java. Record the cost in the ADR: today a    
+  prediction needs only Python and Supabase; after this every external          
+  prediction also needs Java up, on the hot path.                               
+  Q4 - MY QUEStion is, is modelId really needed in the URL? doesn't a single    
+  unique API belongs to a single model already? Wouldn't api key in the header  
+  be enough to fetch the model id from the java service (which fetches from the 
+  row in database) and use the correct model?                                   
+
+● Good. Before the next round I need to check three things in the environment,
+  because one of them may block the routing you sketched.
+
+  Ran 4 shell commands (ctrl+o to expand)
+
+● Confirmed the one thing that would have bitten you at startup. I registered
+  your sketch against this repo's actual Gin version (v1.12.0) and ran it:
+
+  wildcard THEN specific /api/ml/models/:id/predict    PANIC:
+  '/models/:modelId/predict' conflicts
+                                                              with existing
+  wildcard '/*path'
+  specific THEN wildcard (reverse order)               PANIC: catch-all '*path'
+  conflicts with
+                                                              existing path
+  segment 'models'
+  wildcard /api/ml/*path + flat /api/serve/predict     OK
+  same path in two groups w/ different middleware      PANIC: handlers already
+  registered
+
+  protected.POST("/api/ml/models/:modelId/predict", ...) cannot be registered
+  alongside /api/ml/*path in either order — Gin panics on boot, not at request
+  time. But you don't need it. The existing wildcard already routes
+  /api/ml/models/{id}/predict to Python. So the UI half of your design is Python
+  + frontend only, and the gateway diff is exactly one new group. Your
+  architecture survives; one line of it doesn't.
+
+  Three other facts worth having: Process.tsx:187 already picks the artifact
+  implicitly — experiments.find(e => e.status === 'completed' && 
+  e.modelFilePath), i.e. newest completed run — so your Deploy button replaces a
+  hidden rule with a visible one rather than inventing a concept. The
+  experiment list with a per-row action column already exists
+  (Process.tsx:499-540), so the button is cheap. And every backend port in
+  docker-compose.yml is bound to 127.0.0.1, so a Java-internal verify endpoint
+  isn't reachable from outside — good, because SecurityConfig is
+  anyRequest().permitAll() and would not have stopped it.
+
+  On your Q2 table: yes, that's the shape, and yes to a label column — it's the
+  difference between "revoke one of these four hashes" and "revoke the Zapier
+  one."
+
+  ---
+
+  ❓ Q5 - What actually crosses the gateway→Python boundary (this is your Q4,
+  answered): You're right, and I'll drop my recommendation. The model id in the
+  path is redundant: if the key resolves to exactly one model, POST 
+  /api/serve/predict is the whole surface, and the "right key, wrong model"
+  error case the brief asks about stops existing by construction rather than
+  needing a handler.
+
+  But that forces a consequence. If RequireAPIKey resolves key→model at the
+  gateway, Python must be told the model — otherwise the raw key has to travel
+  to Python and get re-verified, and we're back to two verification points. So
+  the gateway sets X-Model-ID next to X-User-ID, and your two Python entrypoints
+  differ only in where the id comes from — path for the browser gate, header
+  for the API gate — before converging on _run_prediction. That is exactly the
+  shape you sketched.
+
+  Two riders. First, the residual risk of dropping the id from the URL is a user
+  pasting the wrong key into the wrong script and getting confident predictions
+  from the wrong model — silent wrong answers, the worst failure mode there is.
+  Cheap fix: the response echoes model_id and the model title, so the mistake
+  is visible without a required path param.
+
+  Second, hygiene: proxy.To calls Header.Set("X-User-ID", …) only when userID !=
+  "" — it never deletes an inbound one. Today that's masked because every
+  proxied route sets it. Your new group makes it load-bearing, so the proxy
+  should unconditionally Del both X-User-ID and X-Model-ID before setting them,
+  and strip Authorization so the raw key never travels deeper than the gateway.
+
+  ➡️ Flat /api/serve/predict; gateway sets X-User-ID + X-Model-ID; proxy deletes
+  both inbound and strips Authorization; response echoes the model identity.
+
+  ---
+
+  ❓ Q6 - Where the deployment pointer lives: Your Deploy button needs somewhere
+  to record the choice. (a) deployed_experiment_id nullable UUID on ml_models —
+  one column, "one deployment per model" enforced by the schema, and the button
+  state is one comparison. (b) isDeployed boolean on experiments — but
+  Experiment.java:13 says "Immutable record of a single training run — never 
+  updated after creation," and this would mutate it, plus nothing stops two rows
+  being true. (c) A deployments table — the production answer, with history and
+  rollback; more than a day.
+
+  Related: an API key is created for a model, but the servable thing is an
+  experiment. If a user creates a key and then deploys a different version, the
+  key keeps working and starts answering from the new artifact. I think that's
+  correct — it's what "deploy" means — but it should be a stated property, not
+  an accident.
+
+  ➡️ (a). It contradicts nothing that already exists, and (b) breaks a stated
+  invariant in the entity's own comment.
+
+  ---
+
+  ❓ Q7 - What deleting a model does to its keys: This one will ship as a bug if
+  we don't decide it. ModelController:109 deletes a model and relies on ON 
+  DELETE CASCADE, which was set up in Postgres by hand — MlModel has no
+  @OneToMany at all. ddl-auto: update will create the api_keys FK with the
+  default NO ACTION, so once a model has a key, deleting that model starts 
+  failing with a constraint violation. A feature that quietly breaks model
+  deletion is exactly the kind of thing "one feature, nothing else changes" was
+  meant to prevent.
+
+  Options: add the cascade by hand in Supabase (works, but invisible to anyone
+  reading the repo), or delete the model's keys explicitly in deleteModel before
+  the repository call (visible in code, one extra line, works on a fresh
+  database with no manual step).
+
+  While we're here, the columns I'd cut and document rather than build:
+  last_used_at (a DB write on the hot path of every prediction), expires_at
+  (nothing rotates it), and soft-delete revoked_at (hard DELETE is one statement
+  and leaves nothing to filter on).
+
+  ➡️ Explicit delete in deleteModel, because a reader cloning this repo gets a
+  working database with no out-of-band SQL. Cut all three columns.
+
+  ---
+
+  ❓ Q8 - What a caller sees, including how they learn the input columns: Today
+  pd.DataFrame(req.data)[payload["features"]] raises KeyError on a column
+  mismatch — a 500, from a caller error. Acceptable behind a browser form that
+  always sends the right shape; not acceptable as a public API, where a wrong
+  column name is the single most likely request anyone will ever send.
+
+  So: no key / bad key → 401. Key valid but its model has no deployed experiment
+  → 409 naming that. Columns wrong → 400 listing expected vs received. And the
+  discoverability question: how does someone with only a key find out what to
+  send? Either GET /api/serve/schema (same key, returns features from the joblib
+  payload plus the model title), or the 400 teaches them by failing once, or
+  docs only.
+
+  ➡️ All four statuses, plus GET /api/serve/schema. It's ~10 lines reusing the
+  same load path, and without it the README has to hardcode column names that
+  only apply to one example dataset.
+
+  ---
+
+  ❓ Q9 - How much UI: This is the budget risk, and it's the one place I think
+  your answer expanded scope past the brief. "Predict moves to another tab" plus
+  per-row Deploy plus a key management surface is three frontend changes,
+  against a brief that says one feature and nothing else changes.
+
+  Ranked by what the feature actually requires: the key surface is mandatory (a
+  key nobody can create doesn't exist), Deploy buttons are cheap (the row and
+  its action column are already there), moving Predict to its own tab is pure 
+  reorganization that buys the feature nothing.
+
+  ➡️ Build the key surface and the Deploy buttons. Leave Predict where it is on
+  the page — repointing it at /api/ml/models/{id}/predict is a one-line change
+  in ml.ts and it closes the ownership hole either way. If time is left at the
+  end, move the tab; if it isn't, nothing is missing.
+
+  ---
+
+  Still downstream, for the round after this: where key creation lives in the UI
+  (MyModels row action vs the model detail page), what the README example looks
+  like end to end, and the final cut list for the ADR.
+
+✻ Churned for 3m 24s
+
+※ recap: We're planning an external API-key path so trained models can be called outside the browser. Round 2 of design questions (Q5-Q9) is waiting on your answers before any code gets written. (disable recaps in /config)
+
+❯ ▎ Q5 — Accepted, including dropping the model id from the path. Two           
+  additions: name the header X-API-Key rather than Authorization, since it is   
+  not a bearer JWT and conflating them invites the wrong mental model — and     
+  have proxy.To delete X-User-ID, X-Model-ID, and X-API-Key unconditionally     
+  before setting the first two, so the raw secret never travels past the        
+  gateway. Response echoing model id and title instead of a required path param 
+  is the right trade.                                                           
+  ▎                                                                             
+  ▎ Q6 — (a), deployed_experiment_id on ml_models. Write the redeploy property  
+  down explicitly: an existing key keeps working after a redeploy and starts    
+  answering from the new artifact. That is what deploy means, and a caller who  
+  needs a frozen version does not have one — record that as a cut, not an       
+  oversight.                                                                    
+  ▎                                                                             
+  ▎ Q7 — Explicit delete in deleteModel, before the repository call. A reader   
+  who clones this repo gets a working database with no out-of-band SQL, and the 
+  cascade rule is visible in code rather than hidden in Supabase. Cut           
+  last_used_at, expires_at, and revoked_at — a write on the hot path of every   
+  prediction for a cosmetic field is a bad trade, and revocation is a DELETE.   
+  ▎                                                                             
+  ▎ Q8 — All four statuses plus GET /api/serve/schema. The schema endpoint      
+  earns its ten lines: without it the README hardcodes column names that only   
+  apply to one example dataset, and a caller with a key has no way to discover  
+  the input shape.                                                              
+  ▎                                                                             
+  ▎ Q9 — Agreed, and you are right that I expanded scope. Build the key surface 
+  and the Deploy buttons. Predict stays where it is; repoint it at              
+  /api/ml/models/{id}/predict in ml.ts, which closes the ownership hole anyway. 
+  ▎                                                                             
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● Three facts that shape this round.
+
+  CI pushes :latest only on push: branches: [main]
+  (.github/workflows/deploy.yml:5), and the same workflow SSHes to EC2 and
+  redeploys. Two consequences: a reader who clones this branch and runs docker 
+  compose up -d gets images built from main, which do not contain this feature —
+  they will follow the README and see nothing. And merging to main puts this on
+  the public internet automatically, which raises the bar on "safe to expose"
+  from a design property to a live one.
+
+  The README already sorts its API reference by trust level — ### Auth (public —
+  no JWT required), ### Models (protected — JWT cookie required), ### ML 
+  (protected). A third subsection slots in with no new file and no
+  restructuring.
+
+  There is no test infrastructure anywhere: no pytest, no _test.go, and Java has
+  only the Spring context-load test. And components/ui/ holds exactly four
+  primitives — button, card, input, label. No dialog. A modal would mean
+  building one; MyModels.tsx:119 already uses an inline expanding Card for "New
+  Model", which is the pattern to copy.
+
+  ---
+
+  ❓ Q10 - Where a key gets created, and the show-once flow: Keys are
+  model-scoped, so the only page with a model in context is the detail page
+  (Process.tsx) — MyModels cards would need a model id they'd have to navigate
+  to anyway. But Process.tsx is already 554 lines and this would push it past
+  650.
+
+  The show-once flow has a real UX trap: the plaintext key exists for exactly
+  one render. If the user closes the panel, navigates, or the component
+  remounts, it's gone and their only recourse is delete-and-recreate. That has
+  to be said in the UI, not just implied.
+
+  ➡️ A components/ApiKeysCard.tsx, dropped into the model detail page in three
+  lines. Inline expanding card matching the MyModels.tsx:119 pattern, no new
+  primitive. After create, the key renders inside the card with a copy button
+  and an explicit "this is the only time you will see this key" line; the list
+  below shows label, dlp_a3f9…, created date, and Delete.
+
+  ---
+
+  ❓ Q11 - The Java verify contract, and what happens when Java is down: POST 
+  /internal/api-keys/verify with the key in the body, not the path — a key in a
+  URL lands in every access log between here and Java. Java hashes, looks up by
+  the unique index on key_hash, returns {"userId", "modelId"} or 404. Path
+  deliberately outside /api/* so no gateway route can ever proxy to it from
+  outside.
+
+  The part I want a decision on is the failure mode you already flagged as the
+  ADR cost. When Java is down or slow, the gateway cannot tell a good key from a
+  bad one. Returning 401 is wrong and actively harmful — it tells a caller to
+  rotate a key that was fine, and if they automate that, an outage becomes a
+  stampede of key regeneration. Fail closed on identity, honest about cause:
+  503.
+
+  Key format: dlp_ + 32 bytes from SecureRandom, base64url — ~43 chars.
+  key_prefix stores dlp_ plus the first four, purely for the list UI.
+
+  ➡️ POST with key in body, /internal/api-keys/verify, 2s timeout, no cache, 503
+  when Java is unreachable and 401 only on an actual miss.
+
+  ---
+
+  ❓ Q12 - What the README says, and the stale-image trap: The trap is the
+  sharper half. Someone clones feat/model-serving-api, reads the README, runs
+  docker compose up -d — and gets main's images with no serving routes. They
+  will conclude the feature is broken. Three ways out: (a) a short note in the
+  serving section with the docker build commands for the three changed services,
+  (b) switch compose to build: — which contradicts CLAUDE.md's deliberate
+  design and diverges from production, (c) say nothing and let them find out.
+
+  Content: a ### Serving (external — API key required) subsection alongside the
+  existing three, one end-to-end example (create key in UI → curl 
+  /api/serve/schema → curl /api/serve/predict), and one entry under ## Key 
+  Design Decisions for why the gateway verifies rather than Python.
+
+  ➡️ (a), and the example uses /api/serve/schema output rather than hardcoded
+  column names, so it stays true for whatever dataset the reader trained on.
+
+  ---
+
+  ❓ Q13 - Tests, given there are none to extend: The brief's real claim is
+  "safe to expose," and the thing that has to hold is that the gateway fails
+  closed. Options: nothing automated, with a recorded manual curl transcript; a
+  pytest suite for python-ml-service, which means a new dev dependency and
+  CLAUDE.md wants a written reason; or a Go test for RequireAPIKey against an
+  httptest fake Java.
+
+  The Go one is the odd one out on cost: testing and net/http/httptest are
+  stdlib, gin is already a dependency, zero new dependencies, and it tests
+  exactly the boundary that matters — missing header, unknown key, Java
+  returning 500, Java timing out, and the happy path asserting
+  X-User-ID/X-Model-ID get set and X-API-Key gets stripped.
+
+  ➡️ The Go middleware test, roughly 80 lines, plus a manual transcript in the
+  planning notes for the cross-user case. Python and Java stay untested and that
+  goes on the cut list explicitly.
+
+  ---
+
+  ❓ Q14 - Commit narrative and the planning artifacts: BRIEF.md says the design
+  gets recorded in planning/spec.md and planning/decisions.md, so those are
+  deliverables, not notes. I'd commit them first — the history then opens with
+  the design and reads as "decided, then built," which is the narrative the
+  convention is asking for.
+
+  Order is constrained by one real dependency: serving resolves a deployed
+  experiment, so deployed_experiment_id has to exist before the Python route can
+  read it.
+
+  ➡️ Seven commits: docs(planning) spec + decisions → feat(java) deployment
+  pointer and endpoint → feat(java) ApiKey entity, verify, CRUD,
+  cascade-on-delete → feat(go) RequireAPIKey, external group, proxy header
+  hygiene, test → feat(ml) serve/predict, serve/schema, model-scoped UI predict,
+  drop the old /api/ml/predict → feat(web) Deploy buttons and repointed predict
+  → feat(web) ApiKeysCard. README lands with the commit that makes each claim
+  true, not in a lump at the end.
+
+  ---
+
+  That is the last of the frontier I can see. Everything the brief asked is now
+  answered except the closing cut list, which I have been accumulating and will
+  put in decisions.md: no frozen version pinning, no key expiry or rotation, no
+  rate limiting or quota, no last_used_at, no per-request caching of key
+  verification, no Python or Java tests, and Predict staying on the current
+  page.
+
+  Answer these five and I'll write spec.md and decisions.md for your review
+  before any code gets written.
+
+✻ Crunched for 1m 43s
+❯ ▎ Q10 — Agreed. components/ApiKeysCard.tsx following the MyModels.tsx:119     
+  inline-expanding-card pattern, no new primitive. The show-once warning is     
+  copy, not a hint: say plainly that this is the only time the key is visible   
+  and that the recovery is delete-and-recreate.                                 
+  ▎                                                                             
+  ▎ Q11 — Agreed on all of it, especially 503 over 401. Telling a caller to     
+  rotate a key that was never bad is worse than saying "I cannot answer right   
+  now", and anyone who automated that rotation turns an outage into a stampede. 
+  One addition for the ADR: /internal/* is protected by network isolation       
+  alone — ports bound to 127.0.0.1 and a path no gateway route proxies — not by 
+  Spring, since SecurityConfig is anyRequest().permitAll(). That holds for a    
+  single-host compose deployment and stops holding the moment these services    
+  share a network with anything else. Production wants a shared secret or mTLS  
+  on that hop. Record it as a known boundary, not an assumption.                
+  ▎                                                                             
+  ▎ Q12 — (a). Do not switch compose to build: — CLAUDE.md's note about         
+  published images is a deliberate design, and diverging from production to     
+  make a README easier is the wrong trade. The stale-image note with explicit   
+  docker build commands for the three changed services is the honest fix.       
+  ▎                                                                             
+  ▎ Q13 — The Go middleware test. Zero new dependencies and it covers the       
+  boundary the whole feature rests on: missing header, unknown key, Java 500,   
+  Java timeout, and the happy path asserting X-User-ID and X-Model-ID are set   
+  while X-API-Key is stripped. Python and Java untested goes on the cut list    
+  explicitly.                                                                   
+  ▎                                                                             
+  ▎ Q14 — Agreed, seven commits in that order, planning first, README landing   
+  with the commit that makes each claim true.                                   
+
+● Frontier's empty. Writing the two planning documents now.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Heredoc choked on the document's punctuation. Using the file tool for these
+  two.
+
+● Write(planning\spec.md)
+  ⎿  Wrote 215 lines to planning\spec.md
+       1 # Spec — external model access
+       3 What gets built. The reasoning behind each choice is in `decisio
+         ns.md`; the
+       4 problem statement is in `BRIEF.md`.
+       6 ## Summary
+       7 
+          hand that key to
+       9 a script or a backend job, and call the model over HTTP without 
+         a browser
+         Revoking it is a
+     … +290 lines (ctrl+o to expand)
+
+● Write(planning\decisions.md)
+  ⎿  Wrote 233 lines to planning\decisions.md
+      1 # Decisions — external model access
+      2 
+      3 Why the design in `spec.md` looks the way it does. Each entry rec
+        ords what was
+      4 decided, what it costs, and what was rejected. Alternatives are n
+      5 rejected ones are the interesting part.
+      6 
+      7 ---
+      8 
+      9 ## 1. A key authorizes one model, not one account
+     … +336 lines (ctrl+o to expand)
+
+● Both written — planning/spec.md (what gets built) and planning/decisions.md
+  (twelve numbered decisions, each naming what was rejected, plus a ten-row cut
+  list).
+
+  Three things worth your eye before I touch code:
+
+  One open item. Gating predict on a deployed experiment is a behavior change:
+  today any completed run is immediately predictable, after this a user must
+  click Deploy first. I resolved it by having saveExperiment auto-deploy when a
+  run completes and the model has no deployment yet — the first run behaves
+  exactly as it does now, every later change is explicit. It's flagged in
+  spec.md under "One thing I decided while drafting." Reject it and Deploy
+  becomes a mandatory manual step for everyone.
+
+  One deviation from your Q2 table. I dropped user_id from api_keys and reach
+  the owner through model.userId. One foreign key already answers both "whose
+  key" and "which model", and a second copy is a second source of truth. Say the
+  word and it goes back.
+
+  Two decisions you didn't ask for, because they only surfaced while writing.
+  Decision 10 records that /api/serve/* gets no CORS entry — a key in frontend
+  JavaScript is a published key, and the existing middleware already produces
+  that behavior for free, so the point is to mark it as chosen rather than
+  accidental. And decision 8 is your /internal/* note, written up as a known
+  boundary with the network-isolation-is-not-authorization argument spelled out.
+
+  Your Q11 addition is decision 8; the ADR cost you asked for in Q3 is decision
+  3.
+
+  Say go and I'll start on commit 1 — which is just these two files — then work
+  down the seven.
+
+✻ Crunched for 3m 41s
+
+※ recap: We planned an API-key feature so trained models can be called from outside the browser, and I've written planning/spec.md and planning/decisions.md for your review. Next: your go-ahead to commit those two files as commit 1 of seven. (disable recaps in /config)
+
+❯ Go on all three — auto-deploy on first completed run, dropping user_id in     
+  favour of model.userId, and both decisions 8 and 10.                          
+                                                                                
+  One thing fell out of the draft: model loading has no cache. _run_prediction  
+  resolves a modelFilePath and downloads the joblib from Supabase on every      
+  single call. Add @lru_cache(maxsize=4) on the load-by-path helper and record  
+  it as a decision.                                                             
+                                                                                
+  The rationale is memory, not speed, and the number is deliberately small: the 
+  deployment box runs near its memory ceiling with no swap, and a pickled       
+  forest is tens of megabytes. Write it as a memory-pressure knob that should   
+  only be raised with headroom to spare. Note also that it reduces the          
+  exhaustion vector your rate-limiting cut-list entry names — a bounded cache   
+  gives a predictable ceiling where load-per-call gives none. Cache             
+  invalidation is free here: every training run writes a new UUID path, so a    
+  redeploy changes the key rather than staleing it.                             
+                                                                                
+  Then commit 1 and work down the seven. I'll read the planning files as they   
+  land; don't wait on me between commits.                                       
+
+● Update(planning\decisions.md)
+  ⎿  Added 28 lines
+      214  
+      215  ---
+      216  
+      217 +## 13. Model loading is cached, and the cache is small on purp
+          +ose                                                           
+      218 +                                                              
+      219 +`_run_prediction` resolves a `modelFilePath` and downloads the
+          + joblib from                                                  
+      220 +Supabase on **every** call. Under a browser form that is a cli
+          +ck; under an API                                              
+      221 +key it is whatever the caller's loop does.                    
+      222 +                                                              
+      223 +**Decided:** `@lru_cache(maxsize=4)` on the load-by-path helpe
+          +r.                                                            
+      224 +                                                              
+      225 +**The rationale is memory, not speed.** The deployment box run
+          +s near its memory                                             
+      226 +ceiling with no swap, and a pickled forest is tens of megabyte
+          +s. Four is a                                                  
+      227 +memory-pressure knob, not a performance tuning parameter, and 
+          +it should only be                                             
+      228 +raised with headroom to spare — raising it on a box that is al
+          +ready tight trades                                            
+      229 +a slow endpoint for an OOM kill.                              
+      230 +                                                              
+      231 +**It also narrows the exhaustion vector** named in the rate-li
+          +miting cut-list                                               
+      232 +row. Loading per call gives an attacker unbounded allocation; 
+          +a bounded cache                                               
+      233 +gives a predictable ceiling of four resident models regardless
+          + of request rate.                                             
+      234 +That is a smaller hole, not a closed one — rate limiting is st
+          +ill cut.                                                      
+      235 +                                                              
+      236 +**Invalidation is free.** Every training run writes a new `mod
+          +els/{uuid}.joblib`                                            
+      237 +path, so a redeploy changes the cache key rather than staling 
+          +an entry. There is                                            
+      238 +no path by which the bytes behind a given key can change.     
+      239 +                                                              
+      240 +The cached payload is read-only in use — `predict` and `invers
+          +e_transform`                                                  
+      241 +mutate nothing — so sharing one entry across FastAPI's threadp
+          +ool is safe.                                                  
+      242 +                                                              
+      243 +---                                                           
+      244 +                                                              
+      245  ## Cut list
+      246  
+      247  Deliberately not built, at roughly one working day. Each of th
+           ese is a thing
+
+● Update(planning\decisions.md)
+  ⎿  Added 1 line, removed 1 line
+      251  |---|---|---|
+      252  | Frozen model versions | Redeployment changing the served art
+           ifact is what deploy means (decision 5) | Pin a key to an expe
+           riment, or a version in the request |
+      253  | Key expiry and rotation | Nothing rotates it, so `expires_at
+           ` would be a column that only ever lies | TTL, rotation, expir
+           y warnings |
+      254 -| Rate limiting and quotas | Loopback-bound ports and a single
+          - trusted user during the exercise | Per-key limits — an unauth
+          -enticated-adjacent endpoint that loads a model per call is a c
+          -heap way to exhaust memory |                                  
+      254 +| Rate limiting and quotas | Loopback-bound ports, a single tr
+          +usted user during the exercise, and a bounded model cache capp
+          +ing resident memory (decision 13) | Per-key limits — a bounded
+          + cache caps memory but nothing caps CPU or request volume |   
+      255  | `last_used_at` on keys | A database write on the hot path of
+            every prediction, for a cosmetic field | Async or sampled wri
+           te, or usage from logs |
+      256  | Soft-delete / audit of revocations | Revocation is a `DELETE
+           `, leaving nothing to filter on | An audit trail of who revoke
+           d what, when |
+      257  | Caching verified keys | Correctness first; the hop is on the
+            Docker network | Short-TTL cache — Redis is already in compos
+           e and unused |
+
+● Update(planning\spec.md)
+  ⎿  Added 3 lines
+      121  rows, user_id)`. `POST /api/ml/predict` — which took a raw `mo
+           del_key` and ran it
+      122  with no ownership check at all — is **deleted**.
+      123  
+      124 +The load-by-path helper carries `@lru_cache(maxsize=4)`. Four 
+          +is a                                                          
+      125 +memory-pressure ceiling, not a speed setting — see decision 13
+          +.                                                             
+      126 +                                                              
+      127  ## Response and error contract
+      128  
+      129  Success, `POST .../predict`:
+
+● Commit 1.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Missed the required trailers on that message — amending before moving on.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Now commit 2 — the deployment pointer. Reading the files I'll be changing.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Update(java-service\src\main\java\com\aiplatform\javaservice\model\MlModel.jav
+        a)
+  ⎿  Added 6 lines
+      36      @Column(nullable = false)
+      37      private UUID userId;
+      38  
+      39 +    // Which trained artifact this model serves. Null until a r
+         +un completes.                                                  
+      40 +    // Deliberately a plain UUID, not a @ManyToOne: a foreign k
+         +ey here would make                                             
+      41 +    // deleteExperiment fail on whichever run happens to be dep
+         +loyed. The pointer is                                          
+      42 +    // cleared explicitly instead — see deleteExperiment.      
+      43 +    private UUID deployedExperimentId;                         
+      44 +                                                               
+      45      @CreationTimestamp
+      46      @Column(updatable = false)
+      47      private Instant createdAt;
+
+● Write(java-service\src\main\java\com\aiplatform\javaservice\dto\SetDeploymentR
+       equest.java)
+  ⎿  Wrote 5 lines to java-service\src\main\java\com\aiplatform\javaservice
+     \dto\SetDeploymentRequest.java
+      1 package com.aiplatform.javaservice.dto;
+      2 
+      3 import java.util.UUID;
+      4 
+      5 public record SetDeploymentRequest(UUID experimentId) {}
+
+● Now the controller: deployment endpoints, auto-deploy, and clearing the
+  pointer on experiment delete.
+
+● Update(java-service\src\main\java\com\aiplatform\javaservice\controller\ModelC
+        ontroller.java)
+  ⎿  Added 64 lines
+      187              return ResponseEntity.notFound().build();
+      188          }
+      189  
+      190 +        // Deleting the deployed run must not leave the pointe
+          +r aimed at a row that is                                      
+      191 +        // gone: every serving request resolves through it, an
+          +d a dangling UUID would                                       
+      192 +        // turn "nothing deployed" into a lookup failure on th
+          +e request path.                                               
+      193 +        MlModel model = exp.getModel();                       
+      194 +        if (expId.equals(model.getDeployedExperimentId())) {  
+      195 +            model.setDeployedExperimentId(null);              
+      196 +            mlModelRepository.save(model);                    
+      197 +        }                                                     
+      198 +                                                              
+      199          experimentRepository.deleteById(expId);
+      200          return ResponseEntity.ok(Map.of("message", "Experiment
+            deleted"));
+      201      }
+      202  
+      203 +    // PUT /api/models/:id/deployment — choose which trained r
+          +un this model serves.                                         
+      204 +    // Switching is the only operation: there is no undeploy, 
+          +because the UI offers                                         
+      205 +    // one Deploy button per run and clicking another moves th
+          +e pointer.                                                    
+      206 +    @PutMapping("/{id}/deployment")                           
+      207 +    public ResponseEntity<?> setDeployment(                   
+      208 +            @PathVariable UUID id,                            
+      209 +            @RequestBody SetDeploymentRequest req,            
+      210 +            @RequestHeader("X-User-ID") String userId) {      
+      211 +                                                              
+      212 +        MlModel model = mlModelRepository.findById(id).orElse(
+          +null);                                                        
+      213 +        if (model == null) return ResponseEntity.notFound().bu
+          +ild();                                                        
+      214 +        if (!model.getUserId().equals(UUID.fromString(userId))
+          +) return ResponseEntity.status(HttpStatus.FORBIDDEN).build(); 
+      215 +                                                              
+      216 +        Experiment exp = experimentRepository.findById(req.exp
+          +erimentId()).orElse(null);                                    
+      217 +        if (exp == null || !exp.getModel().getId().equals(id))
+          + {                                                            
+      218 +            return ResponseEntity.notFound().build();         
+      219 +        }                                                     
+      220 +        // A failed run has no artifact behind it. Refusing he
+          +re keeps the invariant the                                    
+      221 +        // serving path depends on: a non-null pointer always 
+          +resolves to loadable bytes.                                   
+      222 +        if (!"completed".equals(exp.getStatus()) || exp.getMod
+          +elFilePath() == null) {                                       
+      223 +            return ResponseEntity.badRequest().body(Map.of("me
+          +ssage", "Experiment has no trained artifact to deploy"));     
+      224 +        }                                                     
+      225 +                                                              
+      226 +        model.setDeployedExperimentId(exp.getId());           
+      227 +        mlModelRepository.save(model);                        
+      228 +                                                              
+      229 +        return ResponseEntity.ok(Map.of("deployedExperimentId"
+          +, exp.getId().toString()));                                   
+      230 +    }                                                         
+      231 +                                                              
+      232 +    // GET /api/models/:id/deployment — everything the serving
+          + path needs, in one call.                                     
+      233 +    // Python asks this once per prediction; resolving the sam
+          +e answer from GET /:id plus                                   
+      234 +    // GET /:id/experiments would be two round trips and two o
+          +wnership checks.                                              
+      235 +    @GetMapping("/{id}/deployment")                           
+      236 +    public ResponseEntity<?> getDeployment(                   
+      237 +            @PathVariable UUID id,                            
+      238 +            @RequestHeader("X-User-ID") String userId) {      
+      239 +                                                              
+      240 +        MlModel model = mlModelRepository.findById(id).orElse(
+          +null);                                                        
+      241 +        if (model == null) return ResponseEntity.notFound().bu
+          +ild();                                                        
+      242 +        if (!model.getUserId().equals(UUID.fromString(userId))
+          +) return ResponseEntity.status(HttpStatus.FORBIDDEN).build(); 
+      243 +                                                              
+      244 +        UUID deployedId = model.getDeployedExperimentId();    
+      245 +        Experiment exp = deployedId == null ? null : experimen
+          +tRepository.findById(deployedId).orElse(null);                
+      246 +        if (exp == null) {                                    
+      247 +            return ResponseEntity.status(HttpStatus.CONFLICT).
+          +body(Map.of("message", "Model has no deployed experiment"));  
+      248 +        }                                                     
+      249 +                                                              
+      250 +        return ResponseEntity.ok(Map.of(                      
+      251 +                "modelId",       model.getId().toString(),    
+      252 +                "modelTitle",    model.getTitle(),            
+      253 +                "experimentId",  exp.getId().toString(),      
+      254 +                "modelFilePath", exp.getModelFilePath()       
+      255 +        ));                                                   
+      256 +    }                                                         
+      257 +                                                              
+      258      // POST /api/models/:id/experiments — save training run re
+           sult (called by frontend after Python returns)
+      259      @PostMapping("/{id}/experiments")
+      260      @Transactional
+
+❯ by the way don't commit yourself                                              
+
+❯ just give me the commit commands with the message and I will comit it         
+● Understood — no more commits from me. Commit 1 is already in (ad7bd17); say
+  the word if you want it unwound. From here I'll write code and hand you the
+  command.
+
+  Finishing commit 2 — the import and the auto-deploy.
+
+● Update(java-service\src\main\java\com\aiplatform\javaservice\controller\ModelC
+        ontroller.java)
+  ⎿  Added 1 line
+      2  
+      3  import com.aiplatform.javaservice.dto.CreateExperimentRequest;
+      4  import com.aiplatform.javaservice.dto.CreateModelRequest;
+      5 +import com.aiplatform.javaservice.dto.SetDeploymentRequest;     
+      6  import com.aiplatform.javaservice.dto.UpdateModelRequest;
+      7  import com.aiplatform.javaservice.model.Experiment;
+      8  import com.aiplatform.javaservice.model.MlModel;
+
+● Update(java-service\src\main\java\com\aiplatform\javaservice\controller\ModelC
+        ontroller.java)
+  ⎿  Added 9 lines, removed 1 line
+      279          exp.setDurationMs(req.durationMs());
+      280          exp.setModelFilePath(req.modelKey());
+      281  
+      282 -        experimentRepository.save(exp);                       
+      282 +        Experiment savedExp = experimentRepository.save(exp); 
+      283  
+      284          // Update model status to "trained" on successful run
+      285          if ("completed".equals(exp.getStatus())) {
+      286              model.setStatus("trained");
+      287 +            // Auto-deploy the first completed run. Without th
+          +is, adding the deployment                                     
+      288 +            // pointer would silently break predict for everyo
+          +ne: the page used to serve                                    
+      289 +            // whichever completed run sorted first, and would
+          + now serve nothing until                                      
+      290 +            // the user discovered a button that did not exist
+          + yesterday. Later runs                                        
+      291 +            // never move the pointer on their own — that stay
+          +s an explicit choice.                                         
+      292 +            if (model.getDeployedExperimentId() == null && sav
+          +edExp.getModelFilePath() != null) {                           
+      293 +                model.setDeployedExperimentId(savedExp.getId()
+          +);                                                            
+      294 +            }                                                 
+      295              mlModelRepository.save(model);
+      296          }
+      297  
+
+● Let me verify it compiles before handing you the command.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+❯ yes please unwound it. remove your self don't be a contirbutor. Give me the   
+  commands                                                                      
+
+● Java compiles clean (only Lombok's usual sun.misc.Unsafe warnings, no errors).
+
+  Unwind my commit — keeps both planning files in your working tree:
+
+  git reset HEAD~1
+
+  Commit 1 — planning:
+
+  git add planning/spec.md planning/decisions.md
+  git commit -m "docs(planning): record the external model access design" -m
+  "Working design for the API-key serving feature, split the way BRIEF.md asks
+  for: spec.md is what gets built, decisions.md is why, including what was
+  rejected and what is deliberately cut at this budget."
+
+  Commit 2 — deployment pointer:
+
+  git add
+  java-service/src/main/java/com/aiplatform/javaservice/model/MlModel.java java-
+  service/src/main/java/com/aiplatform/javaservice/dto/SetDeploymentRequest.java
+  java-service/src/main/java/com/aiplatform/javaservice/controller/ModelControl
+  ler.java
+  git commit -m "feat(java): make the served artifact an explicit deployment
+  pointer" -m "Predict used to run whichever completed experiment sorted first,
+  an implicit rule nobody chose. deployedExperimentId on ml_models makes it a
+  choice, which is what an external caller needs before a key can point at
+  anything stable." -m "The first completed run auto-deploys so existing
+  behaviour is unchanged; later runs never move the pointer on their own.
+  Deleting the deployed run clears it, and deploying a failed run is refused, so
+  a non-null pointer always resolves to loadable bytes."
+
+  Three things in commit 2 worth knowing before you run it:
+
+  - deployedExperimentId is a plain UUID, not a @ManyToOne. A real FK would make
+    deleteExperiment fail on whichever run happened to be deployed. The pointer
+    is cleared explicitly in deleteExperiment instead.
+  - PUT /deployment refuses a failed run or one with no modelFilePath. That's
+    the invariant the whole serving path leans on: non-null pointer means
+    loadable bytes.
+  - GET /deployment returns modelId, modelTitle, experimentId, modelFilePath —
+    everything Python needs for both /predict and /schema in one round trip.
+
+  Moving on to commit 3, the ApiKey entity and verify endpoint.
+
+✻ Crunched for 2m 23s
+
+※ recap: Goal: add API-key access so trained models can be called outside the browser. Planning docs are done and commits 1-2 are written and handed to you to run. Next: build commit 3, the ApiKey entity and verify endpoint in Java.
+
+❯ now check it is it ready tro go                                               
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Not ready — the history has a problem. Let me see exactly what landed where.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Content is right, message is wrong. 8e6e402 holds all three commit-2 Java
+  files but carries the planning message — the reset didn't take before you
+  committed.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Content is complete and correct — all eight touchpoints are in 8e6e402:
+
+  ┌───────────────────────────────────┬─────────┐
+  │               piece               │  line   │
+  ├───────────────────────────────────┼─────────┤
+  │ clear pointer in deleteExperiment │ 195-196 │
+  ├───────────────────────────────────┼─────────┤
+  │ PUT /{id}/deployment              │ 207     │
+  ├───────────────────────────────────┼─────────┤
+  │ GET /{id}/deployment              │ 236     │
+  ├───────────────────────────────────┼─────────┤
+  │ auto-deploy first completed run   │ 292-293 │
+  └───────────────────────────────────┴─────────┘
+
+  a66356e is clean — planning files only, correct message. Neither commit has me
+  as author or co-author. Java compiled clean against this exact tree.
+
+  One fix needed. HEAD's message says docs(planning) but the commit is the Java
+  deployment pointer. Working tree is clean, so a reword touches nothing else:
+
+  git commit --amend -m "feat(java): make the served artifact an explicit
+  deployment pointer" -m "Predict used to run whichever completed experiment
+  sorted first, an implicit rule nobody chose. deployedExperimentId on ml_models
+  makes it a choice, which is what an external caller needs before a key can
+  point at anything stable." -m "The first completed run auto-deploys so
+  existing behaviour is unchanged; later runs never move the pointer on their
+  own. Deleting the deployed run clears it, and deploying a failed run is
+  refused, so a non-null pointer always resolves to loadable bytes."
+
+  After that: two commits, docs(planning) then feat(java), and commits 3-7 still
+  ahead. Ready to go once that runs.
+
+✻ Brewed for 41s
+
+❯ " git push --force-with-lease                                                 
+  Enumerating objects: 28, done.                                                
+  Counting objects: 100% (28/28), done.                                         
+  Delta compression using up to 20 threads                                      
+  Compressing objects: 100% (12/12), done.                                      
+  Writing objects: 100% (15/15), 2.77 KiB | 1.39 MiB/s, done.                   
+  Total 15 (delta 8), reused 0 (delta 0), pack-reused 0 (from 0)                
+  remote: Resolving deltas: 100% (8/8), completed with 8 local objects.         
+  To https://github.com/mehmet-ors68/no-code-ai-development-platform            
+  - 8e6e402...72e738c feat/model-serving-api -> feat/model-serving-api (forced  
+  update)" now?                                                                 
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All correct — 72e738c carries the right message and files, a66356e is the
+  planning commit, tree clean and in sync with origin. Commits 1 and 2 are done.
+
+  Commit 3 now: the ApiKey entity, verify endpoint, key CRUD, and the cleanup in
+  deleteModel.
+
+● Write(java-service\src\main\java\com\aiplatform\javaservice\model\ApiKey.java)
+  ⎿  Wrote 46 lines to java-service\src\main\java\com\aiplatform\javaservic
+     e\model\ApiKey.java
+       1 package com.aiplatform.javaservice.model;
+       2 
+       3 import jakarta.persistence.*;
+       4 import lombok.Data;
+       5 import org.hibernate.annotations.CreationTimestamp;
+       7 import java.time.Instant;
+       8 import java.util.UUID;
+       9 
+      10 // A credential that authorizes calling exactly one model from o
+         utside the browser.
+     … +46 lines (ctrl+o to expand)
+
+● Write(java-service\src\main\java\com\aiplatform\javaservice\repository\ApiKeyR
+       epository.java)
+  ⎿  Wrote 21 lines to java-service\src\main\java\com\aiplatform\javaservic
+     e\repository\ApiKeyRepository.java
+       1 package com.aiplatform.javaservice.repository;
+       2 
+       3 import com.aiplatform.javaservice.model.ApiKey;
+       4 import org.springframework.data.jpa.repository.JpaRepository;
+       5 
+       7 import java.util.Optional;
+       8 import java.util.UUID;
+       9 
+      10 public interface ApiKeyRepository extends JpaRepository<ApiKey, 
+         UUID> {
+     … +15 lines (ctrl+o to expand)
+
+● Write(java-service\src\main\java\com\aiplatform\javaservice\service\ApiKeyServ
+       ice.java)
+  ⎿  Wrote 47 lines to java-service\src\main\java\com\aiplatform\javaservic
+     e\service\ApiKeyService.java
+       1 package com.aiplatform.javaservice.service;
+       2 
+       3 import org.springframework.stereotype.Service;
+       4 
+       5 import java.nio.charset.StandardCharsets;
+       6 import java.security.MessageDigest;
+       7 import java.security.NoSuchAlgorithmException;
+       8 import java.security.SecureRandom;
+       9 import java.util.Base64;
+      10 import java.util.HexFormat;
+     … +47 lines (ctrl+o to expand)
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Now the two controllers.
+
+● Write(java-service\src\main\java\com\aiplatform\javaservice\controller\ApiKeyC
+       ontroller.java)
+  ⎿  Wrote 104 lines to java-service\src\main\java\com\aiplatform\javaservi
+     ce\controller\ApiKeyController.java
+       1 package com.aiplatform.javaservice.controller;
+       2 
+       3 import com.aiplatform.javaservice.dto.ApiKeyResponse;
+       4 import com.aiplatform.javaservice.dto.CreateApiKeyRequest;
+       5 import com.aiplatform.javaservice.model.ApiKey;
+       6 import com.aiplatform.javaservice.model.MlModel;
+       7 import com.aiplatform.javaservice.repository.ApiKeyRepository;
+       8 import com.aiplatform.javaservice.repository.MlModelRepository;
+       9 import com.aiplatform.javaservice.service.ApiKeyService;
+      10 import lombok.RequiredArgsConstructor;
+     … +112 lines (ctrl+o to expand)
+
+● Write(java-service\src\main\java\com\aiplatform\javaservice\controller\Interna
+       lApiKeyController.java)  ⎿  Wrote 51 lines to java-service\src\main\java\com\aiplatform\javaservic
+     e\controller\InternalApiKeyController.java
+       1 package com.aiplatform.javaservice.controller;
+       2 
+       3 import com.aiplatform.javaservice.dto.VerifyApiKeyRequest;
+       4 import com.aiplatform.javaservice.model.ApiKey;
+       5 import com.aiplatform.javaservice.repository.ApiKeyRepository;
+       6 import lombok.RequiredArgsConstructor;
+       7 import org.springframework.http.ResponseEntity;
+       8 import org.springframework.web.bind.annotation.PostMapping;
+       9 import org.springframework.web.bind.annotation.RequestBody;
+      10 import org.springframework.web.bind.annotation.RequestMapping;
+     … +53 lines (ctrl+o to expand)
+
+● Update(java-service\src\main\java\com\aiplatform\javaservice\controller\Intern
+        alApiKeyController.java)
+  ⎿  Added 1 line
+      3  import com.aiplatform.javaservice.dto.VerifyApiKeyRequest;
+      4  import com.aiplatform.javaservice.model.ApiKey;
+      5  import com.aiplatform.javaservice.repository.ApiKeyRepository;
+      6 +import com.aiplatform.javaservice.service.ApiKeyService;        
+      7  import lombok.RequiredArgsConstructor;
+      8  import org.springframework.http.ResponseEntity;
+      9  import org.springframework.web.bind.annotation.PostMapping;
+
+● Update(java-service\src\main\java\com\aiplatform\javaservice\controller\Intern
+        alApiKeyController.java)
+  ⎿  Added 1 line, removed 1 line
+      27  public class InternalApiKeyController {
+      28  
+      29      private final ApiKeyRepository apiKeyRepository;
+      30 -    private final com.aiplatform.javaservice.service.ApiKeyServ
+         -ice apiKeyService;                                             
+      30 +    private final ApiKeyService apiKeyService;                 
+      31  
+      32      // The key arrives in the body, never in the path: a URL is
+           written to every access
+      33      // log between the gateway and here, and a logged key is a 
+          leaked key.
+
+● Now the cleanup in deleteModel.
+
+● Update(java-service\src\main\java\com\aiplatform\javaservice\controller\ModelC
+        ontroller.java)
+  ⎿  Added 8 lines
+       99  
+      100      // DELETE /api/models/:id — cascade deletes specs + experi
+           ments via FK constraints
+      101      @DeleteMapping("/{id}")
+      102 +    @Transactional                                            
+      103      public ResponseEntity<Map<String, String>> deleteModel(
+      104              @PathVariable UUID id,
+      105              @RequestHeader("X-User-ID") String userId) {
+     ...
+      108          if (model == null) return ResponseEntity.notFound().bu
+           ild();
+      109          if (!model.getUserId().equals(UUID.fromString(userId))
+           ) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+      110  
+      111 +        // The specs/experiments cascade was applied to Postgr
+          +es by hand; api_keys was                                      
+      112 +        // created by ddl-auto, which writes the foreign key w
+          +ith the default NO ACTION.                                    
+      113 +        // Without this line, deleting any model that ever had
+          + a key fails on a                                             
+      114 +        // constraint violation. Doing it in code rather than 
+          +out-of-band SQL means a                                       
+      115 +        // fresh clone behaves the same as the deployed databa
+          +se.                                                           
+      116 +        apiKeyRepository.deleteByModelId(id);                 
+      117 +                                                              
+      118          mlModelRepository.deleteById(id);
+      119          // ModelSpec and Experiment rows deleted automatically
+            by ON DELETE CASCADE
+      120  
+
+● Update(java-service\src\main\java\com\aiplatform\javaservice\controller\ModelC
+        ontroller.java)
+  ⎿  Added 1 line
+       7  import com.aiplatform.javaservice.model.Experiment;
+       8  import com.aiplatform.javaservice.model.MlModel;
+       9  import com.aiplatform.javaservice.model.ModelSpec;
+      10 +import com.aiplatform.javaservice.repository.ApiKeyRepository; 
+      11  import com.aiplatform.javaservice.repository.ExperimentReposito
+          ry;
+      12  import com.aiplatform.javaservice.repository.MlModelRepository;
+      13  import com.aiplatform.javaservice.repository.ModelSpecRepositor
+          y;
+
+● Update(java-service\src\main\java\com\aiplatform\javaservice\controller\ModelC
+        ontroller.java)
+  ⎿  Added 1 line
+      31      private final MlModelRepository mlModelRepository;
+      32      private final ModelSpecRepository modelSpecRepository;
+      33      private final ExperimentRepository experimentRepository;
+      34 +    private final ApiKeyRepository apiKeyRepository;           
+      35  
+      36      // GET /api/models — list all models for the authenticated 
+          user (lightweight, no spec)
+      37      @GetMapping
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Compiles clean. Commit 3:
+
+  git add java-service
+  git commit -m "feat(java): issue, verify and revoke model-scoped API keys" -m
+  "A key authorizes exactly one model, so handing one out cannot leak the rest
+  of a user's work and revoking one cannot break their other integrations.
+  Stored as SHA-256 under a unique index; the plaintext is in the create
+  response and nowhere else." -m "Verification lives at
+  /internal/api-keys/verify, mapped outside /api/ so no gateway route can reach
+  it, with the key in the body rather than the path to keep it out of access
+  logs. That endpoint is guarded by network isolation alone, which is recorded
+  as a known boundary in planning/decisions.md, not assumed away." -m
+  "deleteModel now removes the model's keys first: the api_keys foreign key is
+  created by ddl-auto with the default NO ACTION, so without it deleting any
+  model that ever had a key would fail on a constraint violation."
+
+  Now commit 4 — the Go middleware, header hygiene, route group, and the test.
+
+● Write(go-gateway\internal\middleware\apikey.go)
+  ⎿  Wrote 80 lines to go-gateway\internal\middleware\apikey.go
+       1 package middleware
+       2 
+       3 import (
+       4   "bytes"
+       5   "encoding/json"
+       6   "net/http"
+       7   "os"
+       8   "time"
+       9 
+      10   "github.com/gin-gonic/gin"
+     … +89 lines (ctrl+o to expand)
+
+● Update(go-gateway\internal\proxy\reverse_proxy.go)
+  ⎿  Added 16 lines, removed 2 lines
+      28    }
+      29  
+      30    return func(c *gin.Context) {
+      31 +    // Identity is asserted by this gateway and never accepted 
+         +from the caller. The                                           
+      32 +    // Del matters: Set alone leaves a client-supplied X-User-I
+         +D untouched on any                                             
+      33 +    // route whose middleware did not happen to overwrite it, w
+         +hich is one forgotten                                          
+      34 +    // route away from letting a caller name itself.           
+      35 +    c.Request.Header.Del("X-User-ID")                          
+      36 +    c.Request.Header.Del("X-Model-ID")                         
+      37 +    // The raw key has done its job at this boundary. Forwardin
+         +g a live credential                                            
+      38 +    // deeper only widens the set of logs it can land in.      
+      39 +    c.Request.Header.Del(middleware.APIKeyHeader)              
+      40 +                                                               
+      41      // Forward authenticated user identity — downstream service
+          s read this, no JWT needed there
+      32 -    userID := c.GetString("userID")                            
+      33 -    if userID != "" {                                          
+      42 +    if userID := c.GetString("userID"); userID != "" {         
+      43        c.Request.Header.Set("X-User-ID", userID)
+      44      }
+      45 +    // Set only by RequireAPIKey: an external caller names no m
+         +odel, so the gateway                                           
+      46 +    // tells Python which one the key resolved to.             
+      47 +    if modelID := c.GetString("modelID"); modelID != "" {      
+      48 +      c.Request.Header.Set("X-Model-ID", modelID)              
+      49 +    }                                                          
+      50      rp.ServeHTTP(c.Writer, c.Request)
+      51    }
+      52  }
+
+● Importing middleware into proxy would make the in-package test cycle. Using
+  the literal instead — the proxy shouldn't depend on the middleware package for
+  a string.
+
+● Update(go-gateway\internal\proxy\reverse_proxy.go)
+  ⎿  Added 1 line, removed 1 line
+      36      c.Request.Header.Del("X-Model-ID")
+      37      // The raw key has done its job at this boundary. Forwardin
+          g a live credential
+      38      // deeper only widens the set of logs it can land in.
+      39 -    c.Request.Header.Del(middleware.APIKeyHeader)              
+      39 +    c.Request.Header.Del("X-API-Key")                          
+      40  
+      41      // Forward authenticated user identity — downstream service
+          s read this, no JWT needed there
+      42      if userID := c.GetString("userID"); userID != "" {
+
+● Now the route group in main.go.
+
+● Update(go-gateway\main.go)
+  ⎿  Added 14 lines
+      57      protected.Any("/api/ml/*path",      proxy.To(pythonURL))
+      58    }
+      59  
+      60 +  // External routes — no browser session. RequireAPIKey resolv
+         +es an X-API-Key header                                         
+      61 +  // to its owner and its one model by asking Java, then sets b
+         +oth headers downstream.                                        
+      62 +  //                                                           
+      63 +  // Listed one by one rather than behind a wildcard: this is t
+         +he only group reachable                                        
+      64 +  // without a cookie, so what it exposes should be readable in
+         + full at a glance. It                                          
+      65 +  // also cannot be a wildcard under /api/ml — Gin panics at st
+         +artup when a catch-all                                         
+      66 +  // and a specific route share a prefix, in either declaration
+         + order.                                                        
+      67 +  external := r.Group("/")                                     
+      68 +  external.Use(middleware.RequireAPIKey)                       
+      69 +  {                                                            
+      70 +    external.POST("/api/serve/predict", proxy.To(pythonURL))   
+      71 +    external.GET("/api/serve/schema",   proxy.To(pythonURL))   
+      72 +  }                                                            
+      73 +                                                               
+      74    // Gin registers methods explicitly — unlike Express, a GET r
+          oute does not
+      75    // answer HEAD. Uptime monitors and load balancer health chec
+          ks commonly
+      76    // probe with HEAD, so register both.
+
+● Now the test — middleware plus proxy end to end, so header stripping is
+  actually asserted.
+
+● Write(go-gateway\internal\middleware\apikey_test.go)
+  ⎿  Wrote 156 lines to go-gateway\internal\middleware\apikey_test.go
+       1 package middleware
+       2 
+       3 import (
+       4   "net/http"
+       5   "net/http/httptest"
+       6   "testing"
+       7   "time"
+       8 
+       9   "github.com/gin-gonic/gin"
+      10 )
+     … +155 lines (ctrl+o to expand)
+
+● The header-stripping assertion belongs in the proxy package — writing it there
+  rather than dropping it.
+
+● Write(go-gateway\internal\proxy\reverse_proxy_test.go)
+  ⎿  Wrote 82 lines to go-gateway\internal\proxy\reverse_proxy_test.go
+      1 package proxy
+      2 
+      3 import (
+      4   "net/http"
+      5   "net/http/httptest"
+      6   "testing"
+      7 
+      8   "github.com/gin-gonic/gin"
+      9 )
+     … +78 lines (ctrl+o to expand)
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● httputil.ReverseProxy calls CloseNotify, which httptest.NewRecorder doesn't
+  implement — a harness problem, not a code one. Serving the gateway through a
+  real test server fixes it.
+
+● Update(go-gateway\internal\proxy\reverse_proxy_test.go)
+  ⎿  Added 14 lines, removed 2 lines
+      27      To(downstream.URL)(c)
+      28    })
+      29  
+      30 -  req := httptest.NewRequest(http.MethodPost, "/api/serve/predi
+         -ct", nil)                                                      
+      30 +  // Served through a real server rather than a recorder: Rever
+         +seProxy asks the                                               
+      31 +  // ResponseWriter for CloseNotify, which httptest.NewRecorder
+         + does not implement.                                           
+      32 +  gateway := httptest.NewServer(r)                             
+      33 +  t.Cleanup(gateway.Close)                                     
+      34 +                                                               
+      35 +  req, err := http.NewRequest(http.MethodPost, gateway.URL+"/ap
+         +i/serve/predict", nil)                                         
+      36 +  if err != nil {                                              
+      37 +    t.Fatal(err)                                               
+      38 +  }                                                            
+      39    for k, v := range reqHeaders {
+      40      req.Header.Set(k, v)
+      41    }
+      34 -  r.ServeHTTP(httptest.NewRecorder(), req)                     
+      42 +  resp, err := http.DefaultClient.Do(req)                      
+      43 +  if err != nil {                                              
+      44 +    t.Fatal(err)                                               
+      45 +  }                                                            
+      46 +  defer resp.Body.Close()                                      
+      47  
+      48    return got
+      49  }
+
+  Ran 3 shell commands (ctrl+o to expand)
+● All nine green. Confirming the route table actually boots — that Gin panic is
+  a startup failure, not a test failure.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Boots clean — no panic, no route conflict.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All nine green, boots clean. Commit 4:
+
+  git add go-gateway
+  git commit -m "feat(go): authenticate external callers with an API key" -m
+  "RequireAPIKey resolves an X-API-Key header to its owner and its one model by
+  asking Java, then sets userID and modelID in the context — the same contract
+  RequireAuth provides, so X-User-ID keeps one meaning everywhere downstream.
+  401 only on a real lookup miss; 503 when the verifier is unreachable,
+  unparseable, or slow." -m "proxy.To now deletes X-User-ID, X-Model-ID and
+  X-API-Key before setting the first two. Set alone left a client-supplied
+  identity header untouched on any route whose middleware did not overwrite it,
+  and the raw key has no business travelling past this boundary." -m "Nine
+  tests, no new dependencies: httptest fakes for Java covering missing header,
+  unknown key, verifier 500, timeout and a partial response, plus proxy tests
+  asserting spoofed headers are stripped and the key never reaches downstream."
+
+  Commit 5 — the Python side. The shared logic goes in its own module so both
+  doors call the same public function rather than reaching into a router's
+  privates.
+
+● Write(python-ml-service\prediction.py)
+  ⎿  Wrote 120 lines to python-ml-service\prediction.py
+       1 import io
+       2 import os
+       3 from functools import lru_cache
+       4 
+       5 import joblib
+       6 import pandas as pd
+       7 import requests as req_lib
+       8 from fastapi import HTTPException
+       9 
+      10 from storage import get_supabase
+     … +142 lines (ctrl+o to expand)
+
+● Write(python-ml-service\routers\serve_router.py)
+  ⎿  Wrote 31 lines to python-ml-service\routers\serve_router.py
+       1 from fastapi import APIRouter, Header
+       2 from pydantic import BaseModel
+       3 
+       4 from prediction import model_schema, run_prediction
+       5 
+       6 router = APIRouter()
+       7 
+       8 
+       9 class ServePredictRequest(BaseModel):
+      10     data: list[dict]
+     … +25 lines (ctrl+o to expand)
+
+● Now replacing the old unchecked predict in sklearn_router.py.
+
+● Update(python-ml-service\routers\sklearn_router.py)
+  ⎿  Removed 2 lines
+      35      model_key: str  # object path inside the private "ml-models
+          " bucket
+      36  
+      37  class PredictRequest(BaseModel):
+      38 -    model_config = ConfigDict(protected_namespaces=())         
+      39 -    model_key: str  # object path inside the private "ml-models
+         -" bucket                                                       
+      38      data: list[dict]
+      39  
+      40  
+
+● Update(python-ml-service\routers\sklearn_router.py)
+  ⎿  Added 12 lines, removed 21 lines
+       81      return TrainResponse(metrics=metrics, model_key=file_key)
+       82  
+       83  
+       84 -@router.post("/predict")                                      
+       85 -def predict(req: PredictRequest):                             
+       86 -    # Read straight from Storage with the service key. The old
+          - version fetched its                                          
+       87 -    # own file back over public HTTP - a needless round trip t
+          -hat also broke the                                            
+       88 -    # instant the bucket stopped being public.                
+       89 -    try:                                                      
+       90 -        model_bytes = get_supabase().storage.from_(BUCKET).dow
+          -nload(req.model_key)                                          
+       91 -        payload = joblib.load(io.BytesIO(model_bytes))        
+       92 -    except Exception as e:                                    
+       93 -        raise HTTPException(status_code=400, detail=f"Failed t
+          -o load model: {e}")                                           
+       84 +# The browser door. Replaces POST /predict, which took a model
+          +_key straight from the                                        
+       85 +# client and downloaded it with the service key — any logged-i
+          +n user holding any key                                        
+       86 +# could run any user's model. Naming the model instead of its 
+          +storage path means the                                        
+       87 +# ownership check has something to check.                     
+       88 +@router.post("/models/{model_id}/predict")                    
+       89 +def predict_from_ui(                                          
+       90 +    model_id: str,                                            
+       91 +    req: PredictRequest,                                      
+       92 +    # Go Gateway validates the JWT and injects this on every /
+          +api/ml/* call.                                                
+       93 +    x_user_id: str = Header(alias="X-User-ID"),               
+       94 +):                                                            
+       95 +    return run_prediction(model_id, req.data, x_user_id)      
+       96  
+       95 -    model = payload["model"]                                  
+       96 -    le    = payload["label_encoder"]                          
+       97  
+       98 -    df = pd.DataFrame(req.data)[payload["features"]]          
+       99 -    preds = model.predict(df)                                 
+      100 -                                                              
+      101 -    if le is not None:                                        
+      102 -        preds = le.inverse_transform(preds)                   
+      103 -                                                              
+      104 -    return {"predictions": preds.tolist()}                    
+      105 -                                                              
+      106 -                                                              
+       98  # ── Helpers ─────────────────────────────────────────────────
+           ──────────────────
+       99  
+      100  def _build_model(model_type: str, hp: dict):
+
+● Update(python-ml-service\routers\sklearn_router.py)
+  ⎿  Added 1 line, removed 1 line
+       4  
+       5  import numpy as np
+       6  import pandas as pd
+       7 -from fastapi import APIRouter, HTTPException                   
+       7 +from fastapi import APIRouter, Header, HTTPException           
+       8  from pydantic import BaseModel, ConfigDict
+       9  from sklearn.ensemble import RandomForestClassifier, RandomFore
+          stRegressor
+      10  from sklearn.linear_model import LinearRegression, LogisticRegr
+          ession
+
+● Update(python-ml-service\routers\sklearn_router.py)
+  ⎿  Added 1 line
+      12  from sklearn.metrics import accuracy_score, mean_squared_error,
+           r2_score
+      13  from sklearn.preprocessing import LabelEncoder
+      14  
+      15 +from prediction import run_prediction                          
+      16  from storage import get_supabase
+      17  
+      18  router = APIRouter()
+
+● Update(python-ml-service\main.py)
+  ⎿  Added 5 lines, removed 1 line
+       1  from fastapi import FastAPI
+       2 -from routers import dataset_router, sklearn_router             
+       2 +from routers import dataset_router, serve_router, sklearn_route
+         +r                                                              
+       3  
+       4  app = FastAPI(title="DL Platform ML Service", version="0.1.0")
+       5  
+       6  app.include_router(sklearn_router.router, prefix="/api/ml")
+       7  app.include_router(dataset_router.router, prefix="/api/ml")
+       8 +# Separate prefix, separate trust boundary: everything under /a
+         +pi/ml reaches this                                             
+       9 +# service behind a browser cookie, everything under /api/serve 
+         +behind an API key.                                             
+      10 +# The gateway is what tells them apart; both arrive here with X
+         +-User-ID already proved.                                       
+      11 +app.include_router(serve_router.router, prefix="/api/serve")   
+      12  
+      13  
+      14  @app.get("/healthz")
+
+● Verifying the app imports and the routes register as expected.
+
+  Ran 3 shell commands (ctrl+o to expand)
+
+● Docker's not running. Installing the deps in a scratchpad venv — route
+  registration is worth verifying for real.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Routes are right and the old /api/ml/predict is gone. Now exercising the error
+  contract for real — this is the part with no automated test.
+
+  Made 1 scratchpad edit +99, ran 2 shell commands (ctrl+o to expand)
+
+● All 19 checks pass, including the wrong-column-order case and the old endpoint
+  being gone. Commit 5:
+
+  git add python-ml-service/prediction.py
+  python-ml-service/routers/serve_router.py
+  python-ml-service/routers/sklearn_router.py python-ml-service/main.py
+  git commit -m "feat(ml): serve deployed models to callers holding an API key"
+  -m "Two doors, one implementation. /api/ml/models/{id}/predict is the browser
+  door and /api/serve/predict the external one; both prove identity at the
+  gateway and meet in run_prediction, so the ownership rule exists once.
+  /api/serve/schema tells a caller holding only a key what columns to send." -m
+  "POST /api/ml/predict is deleted. It took a model_key straight from the client
+  and downloaded it with the service key, so any logged-in user holding any key
+  could run any user's model. Naming the model instead of its storage path
+  gives the ownership check something to check." -m "A column mismatch now
+  answers 400 naming expected, received and missing columns instead of reaching
+  pandas and surfacing as a 500. Model loading is lru_cached at 4 entries as a
+  memory ceiling — see decision 13 — and every training run writes a new path,
+  so redeploying changes the key rather than staling an entry."
+
+  Now commit 6 — the frontend.
+
+  Ran 4 shell commands (ctrl+o to expand)
+
+● Now the frontend edits.
+
+● Update(view-vite\src\types\index.ts)
+  ⎿  Added 3 lines
+       5    description: string
+       6    modelType: 'DL' | 'sklearn' | 'yolo' | 'nlp'
+       7    status: 'draft' | 'training' | 'trained' | 'failed'
+       8 +  // Which training run this model serves — to the predict pane
+         +l and to any API key                                           
+       9 +  // pointed at it. Null until a run completes; the first compl
+         +eted run sets it.                                              
+      10 +  deployedExperimentId: string | null                          
+      11    createdAt: string
+      12    updatedAt: string
+      13  }
+● Update(view-vite\src\api\ml.ts)
+  ⎿  Added 4 lines, removed 2 lines
+      24    return res.data
+      25  }
+      26  
+      27 -export const predictSklearn = async (modelKey: string, data: Re
+         -cord<string, unknown>[]): Promise<unknown[]> => {              
+      28 -  const res = await client.post<{ predictions: unknown[] }>('/m
+         -l/predict', { model_key: modelKey, data }, { timeout: 30_000 })
+      27 +// Names the model, not its storage path. The old /ml/predict t
+         +ook a model_key straight                                       
+      28 +// from here and ran whatever it pointed at, with nothing check
+         +ing whose model it was.                                        
+      29 +export const predictSklearn = async (modelId: string, data: Rec
+         +ord<string, unknown>[]): Promise<unknown[]> => {               
+      30 +  const res = await client.post<{ predictions: unknown[] }>(`/m
+         +l/models/${modelId}/predict`, { data }, { timeout: 30_000 })   
+      31    return res.data.predictions
+      32  }
+
+● Update(view-vite\src\api\models.ts)
+  ⎿  Added 6 lines
+      47  export const deleteExperiment = async (modelId: string, experim
+          entId: string): Promise<void> => {
+      48    await client.delete(`/models/${modelId}/experiments/${experim
+          entId}`)
+      49  }
+      50 +                                                               
+      51 +// Choose which trained run this model serves. Switching is the
+         + only operation — there                                        
+      52 +// is no undeploy, because a model either answers with somethin
+         +g or is not deployed yet.                                      
+      53 +export const deployExperiment = async (modelId: string, experim
+         +entId: string): Promise<void> => {                             
+      54 +  await client.put(`/models/${modelId}/deployment`, { experimen
+         +tId })                                                         
+      55 +}                                                              
+
+● Update(view-vite\src\pages\Process.tsx)
+  ⎿  Added 21 lines, removed 1 line
+      183      }
+      184    }
+      185  
+      186 +  // ── Deploy ───────────────────────────────────────────────
+          +───────────────────                                           
+      187 +  // Which run this model answers with. Previously this was wh
+          +ichever completed run                                         
+      188 +  // sorted first — an implicit choice that would silently cha
+          +nge what an API key                                           
+      189 +  // returns every time the user retrained.                   
+      190 +  const deployedId  = detail?.model.deployedExperimentId ?? nu
+          +ll                                                            
+      191 +  const deployedExp = experiments.find(e => e.id === deployedI
+          +d) ?? null                                                    
+      192 +                                                              
+      193 +  const handleDeploy = async (experimentId: string) => {      
+      194 +    if (!id) return                                           
+      195 +    setDeploying(experimentId)                                
+      196 +    setDeployError('')                                        
+      197 +    try {                                                     
+      198 +      await deployExperiment(id, experimentId)                
+      199 +      setDetail(await fetchModel(id))                         
+      200 +    } catch {                                                 
+      201 +      setDeployError('Could not deploy that version. Try again
+          +.')                                                           
+      202 +    } finally {                                               
+      203 +      setDeploying(null)                                      
+      204 +    }                                                         
+      205 +  }                                                           
+      206 +                                                              
+      207    // ── Predict ──────────────────────────────────────────────
+           ────────────────────
+      187 -  const activeModel = experiments.find(e => e.status === 'comp
+          -leted' && e.modelFilePath)                                    
+      208  
+      209    const handlePredictFile = (e: ChangeEvent<HTMLInputElement>)
+            => {
+      210      const file = e.target.files?.[0]
+
+● Update(view-vite\src\pages\Process.tsx)
+  ⎿  Added 4 lines
+      89    // History
+      90    const [experiments, setExperiments] = useState<Experiment[]>(
+          [])
+      91  
+      92 +  // Deploy                                                    
+      93 +  const [deploying, setDeploying] = useState<string | null>(nul
+         +l)                                                             
+      94 +  const [deployError, setDeployError] = useState('')           
+      95 +                                                               
+      96    // ── Load model ────────────────────────────────────────────
+          ──────────────────
+      97    useEffect(() => {
+      98      if (!id) return
+
+● Update(view-vite\src\pages\Process.tsx)
+  ⎿  Added 11 lines, removed 4 lines
+      225    }
+      226  
+      227    const handlePredict = async () => {
+      228 -    if (!activeModel?.modelFilePath || !predictRows.length) re
+          -turn                                                          
+      228 +    if (!id || !deployedExp || !predictRows.length) return    
+      229      setPredicting(true)
+      230      setPredictions(null)
+      231      setPredictError('')
+      232      try {
+      233 -      const preds = await predictSklearn(activeModel.modelFile
+          -Path, predictRows)                                            
+      233 +      const preds = await predictSklearn(id, predictRows)     
+      234        setPredictions(preds)
+      235 -    } catch {                                                 
+      236 -      setPredictError('Prediction failed. Make sure the CSV co
+          -lumns match the training dataset.')                           
+      235 +    } catch (err: unknown) {                                  
+      236 +      // The server names the columns it wanted, so say which 
+          +ones are missing rather                                       
+      237 +      // than making the user diff two CSVs by eye.           
+      238 +      const detail = (err as { response?: { data?: { detail?: 
+          +{ missing?: string[] } } } })?.response?.data?.detail         
+      239 +      setPredictError(                                        
+      240 +        detail?.missing?.length                               
+      241 +          ? `CSV is missing these columns: ${detail.missing.jo
+          +in(', ')}`                                                    
+      242 +          : 'Prediction failed. Make sure the CSV columns matc
+          +h the training dataset.'                                      
+      243 +      )                                                       
+      244      } finally {
+      245        setPredicting(false)
+      246      }
+
+● Update(view-vite\src\pages\Process.tsx)
+  ⎿  Added 1 line, removed 1 line
+      469        )}
+      470  
+      471        {/* Predict */}
+      472 -      {isSklearn && activeModel && (                          
+      472 +      {isSklearn && deployedExp && (                          
+      473          <div className="space-y-4">
+      474            <h2 className="text-lg font-semibold">Predict</h2>
+      475            <Card>
+
+● Now the Deploy button in the history rows.
+
+● Update(view-vite\src\pages\Process.tsx)
+  ⎿  Added 17 lines
+      552                      )}
+      553                    </div>
+      554                    <div className="flex items-center gap-2">
+      555 +                    {exp.status === 'completed' && exp.modelFi
+          +lePath && (                                                   
+      556 +                      exp.id === deployedId ? (               
+      557 +                        <span className="inline-flex items-cen
+          +ter gap-1.5 rounded-md border border-emerald-500/40 bg-emerald
+          +-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400">    
+      558 +                          <Rocket className="h-4 w-4" />      
+      559 +                          Deployed                            
+      560 +                        </span>                               
+      561 +                      ) : (                                   
+      562 +                        <button                               
+      563 +                          onClick={() => handleDeploy(exp.id)}
+      564 +                          disabled={deploying !== null}       
+      565 +                          className="inline-flex items-center 
+          +gap-1.5 rounded-md border border-emerald-500/40 px-3 py-1.5 te
+          +xt-xs font-medium text-emerald-400 hover:bg-emerald-500/10 tra
+          +nsition-colors disabled:opacity-50"                           
+      566 +                        >                                     
+      567 +                          <Rocket className="h-4 w-4" />      
+      568 +                          {deploying === exp.id ? 'Deploying…'
+          + : 'Deploy'}                                                  
+      569 +                        </button>                             
+      570 +                      )                                       
+      571 +                    )}                                        
+      572                      {exp.modelFilePath && (
+      573                        <a
+      574                          href={exp.modelFilePath}
+
+● Update(view-vite\src\pages\Process.tsx)
+  ⎿  Added 4 lines
+      531        {experiments.length > 0 && (
+      532          <div className="space-y-3">
+      533            <h2 className="text-lg font-semibold">Training Histo
+           ry</h2>
+      534 +          <p className="text-xs text-muted-foreground">       
+      535 +            The deployed version is what Predict and any API k
+          +ey for this model answer with.                                
+      536 +          </p>                                                
+      537 +          {deployError && <p className="text-sm text-red-400">
+          +{deployError}</p>}                                            
+      538            <div className="space-y-2">
+      539              {experiments.map((exp, i) => (
+      540                <div key={exp.id} className="rounded-lg border b
+           order-border p-4">
+
+● Update(view-vite\src\pages\Process.tsx)
+  ⎿  Added 2 lines, removed 2 lines
+      1  import { useState, useEffect, useRef, type ChangeEvent } from 'r
+         eact'
+      2  import { useParams, useNavigate } from 'react-router-dom'
+      3  import Papa from 'papaparse'
+      4 -import { BrainCircuit, Upload, Play, ChevronLeft, CheckCircle2, 
+        -XCircle, Clock, Trash2, Download } from 'lucide-react'          
+      5 -import { fetchModel, saveExperiment, fetchExperiments, deleteExp
+        -eriment } from '@/api/models'                                   
+      4 +import { BrainCircuit, Upload, Play, ChevronLeft, CheckCircle2, 
+        +XCircle, Clock, Trash2, Download, Rocket } from 'lucide-react'  
+      5 +import { fetchModel, saveExperiment, fetchExperiments, deleteExp
+        +eriment, deployExperiment } from '@/api/models'                 
+      6  import { trainSklearn, predictSklearn, type SklearnAlgorithm, ty
+         pe TrainResult } from '@/api/ml'
+      7  import type { ModelDetail, Experiment } from '@/types'
+      8  import { Button } from '@/components/ui/button'
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Build passes. Commit 6:
+
+  git add view-vite/src/types/index.ts view-vite/src/api/ml.ts
+  view-vite/src/api/models.ts view-vite/src/pages/Process.tsx
+  git commit -m "feat(web): deploy a training run, and predict by model id" -m
+  "Each completed run in the history gets a Deploy button; the deployed one says
+  so and is not clickable. Predict now answers with whatever is deployed rather
+  than whichever completed run happened to sort first." -m "predictSklearn
+  names the model instead of passing a model_key, so the request the browser
+  sends is the same shape an API key sends and the server has something to check
+  ownership against. A column mismatch now names the missing columns instead of
+  asking the user to diff two CSVs by eye."
+
+  Commit 7 — the key management surface.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Update(view-vite\src\types\index.ts)
+  ⎿  Added 10 lines
+      55    createdAt: string
+      56  }
+      57  
+      58 +// A credential for calling one model from outside the browser.
+         + The plaintext key is                                          
+      59 +// never in this shape — the server returns it once, at creatio
+         +n, and stores only a hash.                                     
+      60 +// keyPrefix is the visible stub that lets a user tell two keys
+         + apart.                                                        
+      61 +export interface ApiKey {                                      
+      62 +  id: string                                                   
+      63 +  label: string                                                
+      64 +  keyPrefix: string                                            
+      65 +  createdAt: string                                            
+      66 +}                                                              
+      67 +                                                               
+      68  // Single source of truth for auth state — replaces the old isL
+          oggedIn + globalLoading + waitAuthorization
+      69  export type AuthStatus = 'loading' | 'authenticated' | 'unauthe
+          nticated'
+      70  
+
+● Write(view-vite\src\components\ApiKeysCard.tsx)
+  ⎿  Wrote 185 lines to view-vite\src\components\ApiKeysCard.tsx
+       1 import { useState, useEffect } from 'react'
+       2 import { KeyRound, Plus, Trash2, Copy, Check } from 'lucide-reac
+       3 import { fetchApiKeys, createApiKey, deleteApiKey } from '@/api/
+         apiKeys'
+       4 import type { ApiKey } from '@/types'
+       6 import { Input } from '@/components/ui/input'
+       7 import { Label } from '@/components/ui/label'
+       8 import { Card, CardContent, CardHeader, CardTitle, CardDescripti
+       9 
+      10 const GATEWAY_URL = import.meta.env.VITE_GATEWAY_URL as string
+     … +205 lines (ctrl+o to expand)
+
+● Mounting it on the model detail page.
+
+● Update(view-vite\src\pages\Process.tsx)
+  ⎿  Added 2 lines
+      527          </div>
+      528        )}
+      529  
+      530 +      {isSklearn && id && <ApiKeysCard modelId={id} hasDeploym
+          +ent={deployedExp !== null} />}                                
+      531 +                                                              
+      532        {/* Experiment history */}
+      533        {experiments.length > 0 && (
+      534          <div className="space-y-3">
+
+● Update(view-vite\src\pages\Process.tsx)
+  ⎿  Added 1 line
+       9  import { Label } from '@/components/ui/label'
+      10  import { Input } from '@/components/ui/input'
+      11  import { Card, CardContent, CardHeader, CardTitle } from '@/com
+          ponents/ui/card'
+      12 +import ApiKeysCard from '@/components/ApiKeysCard'             
+      13  
+      14  // ── Sklearn algorithm metadata ──────────────────────────────
+          ──────────────────
+      15  
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Builds clean. Now the README — the serving section only becomes true once the
+  whole path exists, so it lands with this last commit.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Update(README.md)
+  ⎿  Added 68 lines, removed 3 lines
+      211  ### ML (protected)
+      212  
+      213  ```
+      214 -POST /api/ml/train      { model_type, dataset, target_column, 
+          -hyperparameters?, test_size? }                                
+      215 -POST /api/ml/predict    { model_url, data }                   
+      214 +POST /api/ml/train                   { model_type, dataset, ta
+          +rget_column, hyperparameters?, test_size? }                   
+      215 +POST /api/ml/models/:id/predict      { data }                 
+      216  ```
+      217  
+      218  **Supported `model_type` values:** `linear_regression`, `logis
+           tic_regression`, `random_forest_classifier`, `random_forest_re
+           gressor`
+     ...
+      221  ```json
+      222  {
+      223    "metrics": { "accuracy": 0.95 },
+      224 -  "model_url": "<Supabase Storage URL — pass this to /predict 
+          -later>"                                                       
+      224 +  "model_key": "models/<uuid>.joblib"                         
+      225  }
+      226  ```
+      227  
+      228 +`model_key` is an object path in a private bucket, not a link.
+          + It is saved on the                                           
+      229 +experiment row and resolved server-side; predict names the *mo
+          +del*, so ownership can be                                     
+      230 +checked against something the client does not choose.         
+      231 +                                                              
+      232 +### Serving (external — API key required)                     
+      233 +                                                              
+      234 +The only routes reachable without a browser session. Authentic
+          +ated by an `X-API-Key`                                        
+      235 +header instead of the JWT cookie. A key is created in the UI o
+          +n a model's page and                                          
+      236 +authorizes that one model — nothing else the user owns.       
+      237 +                                                              
+      238 +```                                                           
+      239 +GET  /api/serve/schema     → { model_id, model_title, features
+          + }                                                            
+      240 +POST /api/serve/predict    { data: [ { ...row... } ] }        
+      241 +```                                                           
+      242 +                                                              
+      243 +The model is not named in the URL: the key already identifies 
+          +exactly one, and it                                           
+      244 +resolves to whichever training run is currently deployed.     
+      245 +                                                              
+      246 +**Try it end to end**                                         
+      247 +                                                              
+      248 +1. Train a model, then press **Deploy** on a run under Trainin
+          +g History.                                                    
+      249 +2. Under **API Access**, create a key and copy it — it is show
+          +n once and stored only as                                     
+      250 +   a hash.                                                    
+      251 +3. Ask the model what it expects, rather than guessing column 
+          +names:                                                        
+      252 +                                                              
+      253 +```bash                                                       
+      254 +curl -H "X-API-Key: dlp_..." http://localhost:8080/api/serve/s
+          +chema                                                         
+      255 +# { "model_id": "...", "model_title": "Churn v2", "features": 
+          +["age", "income"] }                                           
+      256 +```                                                           
+      257 +                                                              
+      258 +4. Send rows keyed by exactly those `features`:               
+      259 +                                                              
+      260 +```bash                                                       
+      261 +curl -X POST http://localhost:8080/api/serve/predict \        
+      262 +  -H "X-API-Key: dlp_..." \                                   
+      263 +  -H "Content-Type: application/json" \                       
+      264 +  -d '{"data": [{"age": 35, "income": 150.0}]}'               
+      265 +# { "predictions": [1.5], "model_id": "...", "model_title": "C
+          +hurn v2" }                                                    
+      266 +```                                                           
+      267 +                                                              
+      268 +The response echoes the model it used, so the wrong key in the
+          + wrong script shows up as                                     
+      269 +a wrong title rather than as confident predictions from a mode
+          +l you did not mean.                                           
+      270 +                                                              
+      271 +| Status | Meaning |                                          
+      272 +|--------|---------|                                          
+      273 +| `400` | Columns don't match — the body lists `expected`, `re
+          +ceived` and `missing` |                                       
+      274 +| `401` | No `X-API-Key` header, or no such key |             
+      275 +| `404` | No such model, or it isn't yours |                  
+      276 +| `409` | The model exists but has no deployed version — deplo
+          +y one |                                                       
+      277 +| `503` | The key could not be verified right now. Your key is
+          + fine; do not rotate it |                                     
+      278 +                                                              
+      279 +Revoking is deleting the key in the UI, and takes effect on th
+          +e next request. A lost key                                    
+      280 +cannot be recovered — delete it and create another.           
+      281 +                                                              
+      282 +> **Running this from a clone.** `docker compose up -d` starts
+          + *published* images, and CI                                   
+      283 +> pushes those only on `main`. On a feature branch the routes 
+          +above will 404 until you                                      
+      284 +> rebuild the three services this feature touches:            
+      285 +>                                                             
+      286 +> ```bash                                                     
+      287 +> docker build -t plokoon68/ai-dev-platform-go-gateway:latest 
+          +./go-gateway                                                  
+      288 +> docker build -t plokoon68/ai-dev-platform-java-service:lates
+          +t ./java-service                                              
+      289 +> docker build -t plokoon68/ai-dev-platform-python-ml-service:
+          +latest ./python-ml-service                                    
+      290 +> docker compose up -d                                        
+      291 +> ```                                                         
+      292 +                                                              
+      293  ---
+      294  
+      295  ## Key Design Decisions
+● Update(README.md)
+  ⎿  Added 6 lines
+      298  
+      299  **Gateway injects X-User-ID header** — JWT is validated once a
+           t the gateway; downstream services read `X-User-ID` from the h
+           eader instead of parsing JWT themselves. Java and Python never
+            see the raw token.
+      300  
+      301 +**API keys are verified at the gateway, not in Python** — `Req
+          +uireAPIKey` resolves the key to its owner and its one model by
+          + asking Java, then sets `X-User-ID` and `X-Model-ID` for downs
+          +tream services. This keeps a single meaning for `X-User-ID` ev
+          +erywhere: always gateway-asserted, never self-declared, so eve
+          +ry ownership check already in Java and Python keeps working un
+          +changed. The cost is that external predictions now need Java o
+          +n the request path — recorded in `planning/decisions.md`.     
+      302 +                                                              
+      303 +**A key authorizes one model, not one account** — handing a ke
+          +y to a contractor cannot leak the rest of your models, and rev
+          +oking it cannot break your other integrations. Keys are 32 byt
+          +es of `SecureRandom` stored as SHA-256 under a unique index; t
+          +he plaintext exists only in the response that creates it.     
+      304 +                                                              
+      305 +**Deployment is an explicit pointer** — `ml_models.deployed_ex
+          +periment_id` names which training run answers requests. It use
+          +d to be whichever completed run sorted first, which meant retr
+          +aining silently changed what callers got. The first completed 
+          +run auto-deploys so nothing regressed; every change after that
+          + is a button press.                                           
+      306 +                                                              
+      307  **Supabase Session Pooler** — Supabase's direct connection end
+           point is IPv6-only. Docker Desktop on Windows/Mac routes IPv4 
+           only. The Session Pooler (PgBouncer) sits in front and provide
+           s an IPv4-accessible endpoint.
+      308  
+      309  **`env_file` instead of `environment:` in docker-compose** — D
+           ocker Compose interpolates `$VAR` patterns when using the `env
+           ironment:` key. Passwords containing `$` get silently mangled.
+            `env_file:` passes values to the container literally, bypassi
+           ng interpolation.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Update(README.md)
+  ⎿  Added 1 line, removed 1 line
+      310  
+      311  **ModelSpec versioning** — specs are immutable rows. Saving a 
+           new config creates a new row with `version + 1` and `is_active
+            = true`; previous rows are set to `is_active = false`. Enable
+           s full config history without soft deletes.
+      312  
+      313 -**Python owns model file storage** — the trained model is seri
+          -alized with joblib and uploaded to Supabase Storage by the ML 
+          -service itself, which returns only a URL. The service that pro
+          -duces a file is the service that stores it: Java never handles
+          - file bytes, it just persists the URL alongside the experiment
+          - row. Keeps large payloads off the Gateway and out of the data
+          -base.                                                         
+      313 +**Python owns model file storage** — the trained model is seri
+          +alized with joblib and uploaded to Supabase Storage by the ML 
+          +service itself, which returns only an object path. The service
+          + that produces a file is the service that stores it: Java neve
+          +r handles file bytes, it just persists the path alongside the 
+          +experiment row. Keeps large payloads off the Gateway and out o
+          +f the database. The bucket is private, so the path is useless 
+          +without the service key.                                      
+      314  
+      315  ---
+      316  
+
+● Update(README.md)
+  ⎿  Added 6 lines, removed 5 lines
+      67  ## Current Status
+      68  
+      69  ### ✅ Working
+      70 -- **Go Gateway** — JWT middleware, HTTP routing to Java and Pyt
+         -hon services, CORS, `GET /api/me` lightweight auth check       
+      71 -- **Java Spring Boot** — user registration/login (bcrypt + JWT,
+         - SameSite=None cookie for cross-origin), model CRUD, experiment
+         - history                                                       
+      72 -- **Python ML Service** — `/api/ml/train` (4 sklearn algorithms
+         -), `/api/ml/predict` (Supabase Storage), model file stored in S
+         -upabase Storage                                                
+      70 +- **Go Gateway** — JWT middleware, API-key middleware for exter
+         +nal callers, HTTP routing to Java and Python services, CORS, `G
+         +ET /api/me` lightweight auth check                             
+      71 +- **Java Spring Boot** — user registration/login (bcrypt + JWT,
+         + SameSite=None cookie for cross-origin), model CRUD, experiment
+         + history, API key issuing and verification                     
+      72 +- **Python ML Service** — `/api/ml/train` (4 sklearn algorithms
+         +), predict by model id, model file stored in Supabase Storage  
+      73 +- **External model serving** — `/api/serve/*`, called with an A
+         +PI key from outside the browser                                
+      74  - **Redis** — running, wired to gateway
+      74 -- **PostgreSQL (Supabase)** — users, models, model specs, exper
+         -iments                                                         
+      75 +- **PostgreSQL (Supabase)** — users, models, model specs, exper
+         +iments, api keys                                               
+      76  - **Docker Compose** — all 4 services start with a single comma
+          nd
+      76 -- **React + TypeScript frontend** — auth flow, My Models page, 
+         -Process page (train + history + predict)                       
+      77 +- **React + TypeScript frontend** — auth flow, My Models page, 
+         +Process page (train + history + deploy + predict + API keys)   
+      78  - **Production deployment** — AWS EC2 t3.micro, Nginx + Let's E
+          ncrypt, DuckDNS subdomain
+      79  - **CI/CD** — GitHub Actions: build → Docker Hub → EC2 restart 
+          on every push to main
+      80  
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● Everything green across all three services. Commit 7:
+
+  git add view-vite/src/api/apiKeys.ts view-vite/src/components/ApiKeysCard.tsx
+  view-vite/src/types/index.ts view-vite/src/pages/Process.tsx README.md
+  git commit -m "feat(web): create and revoke API keys from the model page" -m
+  "An inline card on the model detail page, following the New Model pattern
+  already in MyModels. The plaintext key renders once with a copy button and
+  says plainly that it cannot be shown again and that the recovery is
+  delete-and-recreate. The list below shows label, prefix stub and date, with
+  Revoke." -m "README gains a Serving section alongside the existing trust-level
+  sections, with an end-to-end curl example that reads its column names from
+  /api/serve/schema rather than hardcoding them, the full status table, and a
+  warning that compose runs published images so a feature branch needs three
+  docker builds first." -m "Also corrects the ML section, which still documented
+  model_url and a /api/ml/predict that no longer exists."
+
+  Verification across the whole branch:
+
+  ┌───────────────────────┬─────────────────────────────────────────────────┐
+  │                       │                     result                      │
+  ├───────────────────────┼─────────────────────────────────────────────────┤
+  │ go build + go test    │ 9 tests pass                                    │
+  │ ./...                 │                                                 │
+  ├───────────────────────┼─────────────────────────────────────────────────┤
+  │ mvnw compile          │ clean                                           │
+  ├───────────────────────┼─────────────────────────────────────────────────┤
+  │ tsc --noEmit + vite   │ clean                                           │
+  │ build                 │                                                 │
+  ├───────────────────────┼─────────────────────────────────────────────────┤
+  │ Python route table    │ /api/ml/predict gone,                           │
+  │                       │ /api/serve/{predict,schema} present             │
+  ├───────────────────────┼─────────────────────────────────────────────────┤
+  │ Gateway boot          │ no Gin route conflict                           │
+  ├───────────────────────┼─────────────────────────────────────────────────┤
+  │ Serving contract (19  │ all pass                                        │
+  │ checks)               │                                                 │
+  └───────────────────────┴─────────────────────────────────────────────────┘
+
+  Two things to know:
+
+  view-vite/dist/ is not in .gitignore. My build created it; I've deleted it
+  again. But anyone who runs npm run build in this repo will see 1,600 build
+  artifacts offered up as untracked files. Worth a one-line fix, separate from
+  this feature.
+
+  docker compose still can't verify this end to end — Docker Desktop isn't
+  running here, so the checks above are per-service plus a faked-boundary Python
+  run, not a live stack. The one path no automated check covers is a real key
+  travelling gateway → Java → Python. Start the stack and walk the README
+  example when you're ready; that's the manual transcript decisions.md names.
+
+✻ Cogitated for 17m 23s
+
+※ recap: Goal: add API-key model serving to this platform. All seven commits' code is written and verified; you've committed through commit 4. Next: run the commit 5, 6, and 7 commands I gave, then walk the README curl example against a live stack.
+
+❯ nice work. But I have notices you have builed the react project and the dist  
+  folder exists now. Shouldn't it be ignored in .gitignore?                     
+
+● Yes — it should be. I deleted it after building, so it's not there now, but
+  the gap in .gitignore is real and will bite the next person who runs a build.
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● dist/ was the only gap — Vite's default output dir, never ignored. Adding it
+  in the repo's path-specific style:
+
+● Update(.gitignore)
+  ⎿  Added 3 lines
+       5  # Node.js
+       6  node_modules/
+       7  npm-debug.log*
+       8 +# Vite's default build output. Nothing reads it from here - the
+         + Dockerfile builds its                                         
+       9 +# own copy - so committing it would only ever mean stale bundle
+         +s in review diffs.                                             
+      10 +view-vite/dist/                                                
+      11  
+      12  # Environment files (never commit secrets)
+      13  .env
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Verified by rebuilding — dist/ is now ignored and git status stays clean.
+
+  This is a repo-hygiene fix, not part of the feature, so it wants its own
+  commit rather than riding along with commit 7:
+
+  git add .gitignore
+  git commit -m "chore: ignore the Vite build output" -m "npm run build in
+  view-vite drops a dist/ directory that was never ignored, offering up a few
+  thousand untracked build artifacts. Nothing reads it from the repo - the
+  Dockerfile builds its own copy."
+
+  One thing I found next to it and did not touch: go-gateway/gateway.log is a
+  tracked file — a committed log. It's unrelated to this feature and deleting a
+  tracked file is your call, but it's probably a leftover rather than something
+  intentional. git rm --cached go-gateway/gateway.log plus a *.log line would
+  clear it if you agree.
+
+✻ Baked for 44s
+
+※ recap: We planned and built the external model-serving API key feature across all seven commits; everything compiles and tests pass. Commits 1 and 2 are in; you still need to run the commit commands I gave for commits 3 through 7 plus the .gitignore fix.
+
+❯ okay so CI CD won't run until I merge this branchto main right? so should I   
+  just run the pull request and merge and test live, or do youhave other        
+  suggestions?                                                                  
+
+● Good question, and the answer is: don't merge first. Let me check one thing
+  that changes the advice.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Two facts that settle it:
+
+  CI has no test job. The pipeline is changes → build-go/java/python → deploy.
+  Nothing runs go test. So merging to main doesn't verify anything — it builds
+  images and SSHes to EC2. "Test live" would mean finding out in production, on
+  a newly public trust boundary, with no automated gate in between.
+
+  Local compose is not local data. All three services env_file: .env, and that
+  DATABASE_URL / SUPABASE_URL point at your real Supabase. Running locally uses
+  production Postgres and production Storage. Only the compute is local.
+
+  So: run it locally first, then PR and merge. The local run is exactly the
+  manual transcript decisions.md promised, and it's the only way to exercise the
+  one path nothing automated covers — a real key going gateway → Java → Python.
+
+  docker build -t plokoon68/ai-dev-platform-go-gateway:latest ./go-gateway
+  docker build -t plokoon68/ai-dev-platform-java-service:latest ./java-service
+  docker build -t plokoon68/ai-dev-platform-python-ml-service:latest
+  ./python-ml-service
+  docker compose up -d
+
+  Then walk the README example: deploy a run, create a key, curl 
+  /api/serve/schema, curl /api/serve/predict. Also try a wrong key (401), a key
+  whose model has no deployment (409), and delete a model that has a key — that
+  last one is the constraint violation decision 6 exists to prevent, and it's
+  worth seeing it not happen.
+
+  Two things to know before you boot it.
+
+  Because the database is shared, ddl-auto: update creates api_keys and the
+  deployed_experiment_id column in production Postgres the moment Java starts
+  locally — before any merge. That's additive and safe, but it isn't undone by
+  rolling back the branch. One narrow consequence: until you merge, EC2 is
+  running old Java against the new schema, and its deleteModel doesn't know to
+  clear keys — so don't create a key locally and then delete that model through
+  the live site.
+
+  A gap I should have caught earlier: auto-deploy only fires when a run
+  completes. Every model you've already trained has deployed_experiment_id = 
+  NULL, so their Predict panel will disappear until you press Deploy. Existing
+  rows don't backfill themselves. One-time fix in the Supabase SQL editor, after
+  Java has booted once and created the column:
+
+  update ml_models m
+  set deployed_experiment_id = (
+    select e.id from experiments e
+    where e.model_id = m.id
+      and e.status = 'completed'
+      and e.model_file_path is not null
+    order by e.created_at desc
+    limit 1
+  )
+  where m.deployed_experiment_id is null;
+
+  That reproduces the old implicit rule — newest completed run — for models that
+  predate the column, so nothing looks broken after the deploy.
+
+  Separately, worth a follow-up after this merges: the branch adds nine Go tests
+  that CI will never run. A go test ./... step in build-go is a few lines and
+  turns them from documentation into a gate.
+
+✻ Cogitated for 1m 5s
+
+※ recap: We planned and built the API-key model serving feature across all seven commits, verified with builds and tests. You're at the final step: run the stack locally with the three rebuilt images, walk the README curl example, then open the PR and merge.
+
+❯ "API Keys                                                                     
+  Call this model from your own code, with no browser session. A key works for  
+  this model and nothing else you own.                                          
+                                                                                
+  This is the only time you will see this key.                                  
+                                                                                
+  It is stored as a hash, so it cannot be shown again. If you lose it, delete   
+  it and create another.                                                        
+                                                                                
+  dlp_d6EhGQul8dT20O2P3LJgYbeZs1DlAU72kENOcd7EWsI                               
+  Copy                                                                          
+  Send it as X-API-Key to http://localhost:8080/api/api/serve/predict. Call     
+  /api/serve/schema to see which columns it expects.                            
+                                                                                
+  New API key                                                                   
+  dlp_d6Eh…                                                                     
+  test                                                                          
+  21.08.2026" in the model page I think this api is written twice here is it    
+  not wrong? "Send it as X-API-Key to                                           
+  http://localhost:8080/api/api/serve/predict. Call /api/serve/schema to see    
+  which columns it expects.                                                     
+                                                                                
+  "                                                                             
+
+● Correct — that's a real bug. VITE_GATEWAY_URL already ends in /api, so
+  appending /api/serve/predict doubles it. Let me confirm the value.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Approaching your 5-hour usage limit — Claude will wrap up the current 
+  step.
+  ⎿  You've hit your session limit · resets 10:20pm (Europe/Istanbul) · progress
+     saved
+     /upgrade or /usage-credits to finish what you’re working on.
+✻ Cogitated for 17s
+
+❯ retry                                                                         
+
+● Confirmed: VITE_GATEWAY_URL=http://localhost:8080/api already carries the
+  /api. My card appended it a second time. Fixing both references:
+
+● Update(view-vite\src\components\ApiKeysCard.tsx)
+  ⎿  Added 3 lines, removed 2 lines
+      113                </div>
+      114                <p className="text-xs text-muted-foreground">
+      115                  Send it as <code className="font-mono">X-API-K
+           ey</code> to{' '}
+      116 -                <code className="font-mono break-all">{GATEWAY
+          -_URL}/api/serve/predict</code>. Call{' '}                     
+      117 -                <code className="font-mono">/api/serve/schema<
+          -/code> to see which columns it expects.                       
+      116 +                <code className="font-mono break-all">{GATEWAY
+          +_URL}/serve/predict</code>. Call{' '}                         
+      117 +                <code className="font-mono break-all">{GATEWAY
+          +_URL}/serve/schema</code> to see which                        
+      118 +                columns it expects.                           
+      119                </p>
+      120              </div>
+      121            )}
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Fixed and typechecks. The card now renders
+  http://localhost:8080/api/serve/predict, and it'll follow .env.local correctly
+  if you point it at the deployed gateway.
+
+  Amend into commit 7 if you haven't pushed it, otherwise:
+
+  git add view-vite/src/components/ApiKeysCard.tsx
+  git commit -m "fix(web): stop doubling /api in the API key usage hint" -m
+  "VITE_GATEWAY_URL already ends in /api, so the card rendered
+  .../api/api/serve/predict. Every other caller goes through the axios client,
+  which appends to the same base — this hint was the only place building a URL
+  by hand."
+
+  Worth noting the README's curl examples were never affected: they hardcode
+  http://localhost:8080/api/serve/... rather than composing from the env var, so
+  they're correct as written.
+
+  Remaining work, highest impact first:
+
+  - Run the local stack and walk the README example — build the three images,
+    docker compose up -d, then exercise deploy → create key → schema → predict,
+    plus wrong key (401), no deployment (409), and deleting a model that has a
+    key. Nothing automated covers the gateway → Java → Python key path.
+  - Run the backfill SQL after Java boots once, or every already-trained model
+    loses its Predict panel until you press Deploy.
+  - Add go test ./... to the build-go CI job — the branch adds nine tests that
+    CI currently never runs.
+
+✻ Worked for 27s
+
+※ recap: We planned and built external API-key access to trained models across all seven commits, and just fixed a doubled /api in the key card. Next: build the three Docker images, run the stack locally, and walk the README curl example end to end.
+
+❯ give me the curl commands for testing this feature we just implemeted         
+
+● Here's the full sequence. Run from the repo root in Git Bash — in PowerShell
+  use curl.exe, since bare curl is an alias for Invoke-WebRequest and takes
+  different flags.
+
+  1. Get a session (needed only to deploy and mint keys)
+
+  curl -s -c cookies.txt -X POST http://localhost:8080/api/auth/login \
+    -H "Content-Type: application/json" \
+    -d '{"username":"YOUR_USERNAME","password":"YOUR_PASSWORD"}'
+
+  curl -s -b cookies.txt http://localhost:8080/api/models        # pick a model 
+  id
+  MODEL_ID=paste-model-uuid-here
+
+  2. Deploy a training run
+
+  curl -s -b cookies.txt http://localhost:8080/api/models/$MODEL_ID/experiments
+   # pick a completed one
+  EXP_ID=paste-experiment-uuid-here
+
+  curl -s -b cookies.txt -X PUT
+  http://localhost:8080/api/models/$MODEL_ID/deployment \
+    -H "Content-Type: application/json" -d "{\"experimentId\":\"$EXP_ID\"}"
+
+  curl -s -b cookies.txt http://localhost:8080/api/models/$MODEL_ID/deployment
+  # → modelId, modelTitle, experimentId, modelFilePath
+
+  3. Mint a key
+
+  curl -s -b cookies.txt -X POST
+  http://localhost:8080/api/models/$MODEL_ID/api-keys \
+    -H "Content-Type: application/json" -d '{"label":"curl test"}'
+  # → copy "key" — this is the only time it exists
+
+  KEY=dlp_paste-the-key-here
+
+  curl -s -b cookies.txt http://localhost:8080/api/models/$MODEL_ID/api-keys
+  # → id, label, keyPrefix, createdAt — and NO hash, NO plaintext
+
+  4. The feature — note there is no cookie from here on
+
+  curl -s -H "X-API-Key: $KEY" http://localhost:8080/api/serve/schema
+  # → { "model_id", "model_title", "features": ["age","income"] }
+
+  curl -s -X POST http://localhost:8080/api/serve/predict \
+    -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
+    -d '{"data":[{"age":35,"income":150.0}]}'
+  # → { "predictions": [...], "model_id": ..., "model_title": ... }
+
+  Use whatever column names /schema returned — the age/income above are
+  placeholders.
+
+  5. The trust boundary
+
+  # no key
+  curl -s -o /dev/null -w "%{http_code}\n"
+  http://localhost:8080/api/serve/schema
+
+  # wrong key
+  curl -s -o /dev/null -w "%{http_code}\n" -H "X-API-Key: dlp_totally_wrong" \
+    http://localhost:8080/api/serve/schema
+
+  # a browser cookie must NOT open the external door
+  curl -s -o /dev/null -w "%{http_code}\n" -b cookies.txt
+  http://localhost:8080/api/serve/schema
+
+  # caller trying to name itself — the proxy strips this before Python sees it
+  curl -s -o /dev/null -w "%{http_code}\n" -H "X-User-ID: 
+  00000000-0000-0000-0000-000000000000" \
+    http://localhost:8080/api/serve/schema
+
+  All four should print 401.
+
+  # wrong columns
+  curl -s -X POST http://localhost:8080/api/serve/predict \
+    -H "X-API-Key: $KEY" -H "Content-Type: application/json" \
+    -d '{"data":[{"nonsense":1}]}'
+  # → 400 naming expected / received / missing
+
+  # verifier down → 503, not 401
+  docker compose stop java-service
+  curl -s -o /dev/null -w "%{http_code}\n" -H "X-API-Key: $KEY"
+  http://localhost:8080/api/serve/schema
+  docker compose start java-service
+
+  6. Revocation and lifecycle
+
+  # 409: key valid, model has nothing deployed — make a fresh model, key it, 
+  call it
+  curl -s -b cookies.txt -X POST http://localhost:8080/api/models \
+    -H "Content-Type: application/json" \
+    -d '{"title":"undeployed","description":"409 test","modelType":"sklearn"}'
+  # then create a key for it and call /api/serve/schema → 409
+
+  # revoke, then confirm the key is dead
+  KEY_ID=paste-key-uuid-here
+  curl -s -b cookies.txt -X DELETE
+  http://localhost:8080/api/models/$MODEL_ID/api-keys/$KEY_ID
+  curl -s -o /dev/null -w "%{http_code}\n" -H "X-API-Key: $KEY"
+  http://localhost:8080/api/serve/schema
+
+  # the old unchecked endpoint is gone
+  curl -s -o /dev/null -w "%{http_code}\n" -b cookies.txt -X POST
+  http://localhost:8080/api/ml/predict \
+    -H "Content-Type: application/json" -d
+  '{"model_key":"models/x.joblib","data":[]}'
+
+  # deleting a model that HAS a key must succeed — this is decision 6
+  curl -s -o /dev/null -w "%{http_code}\n" -b cookies.txt -X DELETE
+  http://localhost:8080/api/models/$MODEL_ID
+
+  Expected results
+
+  ┌─────────────────────────────────────────┬───────────────────────────────┐
+  │                  Check                  │            Expect             │
+  ├─────────────────────────────────────────┼───────────────────────────────┤
+  │ schema / predict with a good key        │ 200                           │
+  ├─────────────────────────────────────────┼───────────────────────────────┤
+  │ no key, wrong key, cookie only, spoofed │ 401                           │
+  │  X-User-ID                              │                               │
+  ├─────────────────────────────────────────┼───────────────────────────────┤
+  │ wrong columns                           │ 400 +                         │
+  │                                         │ expected/received/missing     │
+  ├─────────────────────────────────────────┼───────────────────────────────┤
+  │ model with no deployed run              │ 409                           │
+  ├─────────────────────────────────────────┼───────────────────────────────┤
+  │ java-service stopped                    │ 503                           │
+  ├─────────────────────────────────────────┼───────────────────────────────┤
+  │ revoked key                             │ 401                           │
+  ├─────────────────────────────────────────┼───────────────────────────────┤
+  │ POST /api/ml/predict                    │ 404                           │
+  ├─────────────────────────────────────────┼───────────────────────────────┤
+  │ delete a model that has a key           │ 200                           │
+  └─────────────────────────────────────────┴───────────────────────────────┘
+
+  The last row is the one most worth doing — it's the constraint violation that
+  would have shipped without the explicit key cleanup, and the only way to see
+  it is to actually try it.
+
+✻ Sautéed for 47s
+
+❯ okay run the tests. here is the api key:                                      
+  dlp_vlFX6EWLnIx25JabPY-TILl0fT7WeNKF7f0kiDOTLwQ                               
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Stack is up and the external door works. Titanic model. Now predict and the
+  boundary checks:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Predictions work, column order is normalized, and both 400s are exact. Now the
+  trust boundary:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● All rejected. Two of those are worth reading carefully — I'll note them below.
+  Now the 503 decision, which is the one design choice nothing has exercised
+  yet:
+
+  Ran 2 shell commands (ctrl+o to expand)
+
+● All green. Recovered on its own once Java was back.
+
+  ┌────────────────────────┬──────────────┬────────────────────────────────┐
+  │         Check          │   Expected   │              Got               │
+  ├────────────────────────┼──────────────┼────────────────────────────────┤
+  │ GET /serve/schema with │ 200 +        │ ✅ 200, 8 Titanic features     │
+  │  key                   │ features     │                                │
+  ├────────────────────────┼──────────────┼────────────────────────────────┤
+  │ POST /serve/predict, 2 │ 200 + echoed │ ✅ [1,0], model_id + title     │
+  │  rows                  │  identity    │                                │
+  ├────────────────────────┼──────────────┼────────────────────────────────┤
+  │ Shuffled column order  │ same answer  │ ✅ matched the batch result    │
+  ├────────────────────────┼──────────────┼────────────────────────────────┤
+  │ Wrong columns          │ 400 naming   │ ✅ expected/received/missing   │
+  │                        │ columns      │ all correct                    │
+  ├────────────────────────┼──────────────┼────────────────────────────────┤
+  │ Empty data             │ 400          │ ✅ "No rows to predict"        │
+  ├────────────────────────┼──────────────┼────────────────────────────────┤
+  │ No key / wrong key /   │ 401          │ ✅ all 401                     │
+  │ empty key header       │              │                                │
+  ├────────────────────────┼──────────────┼────────────────────────────────┤
+  │ Garbage session        │ 401          │ ✅                             │
+  │ cookie, no key         │              │                                │
+  ├────────────────────────┼──────────────┼────────────────────────────────┤
+  │ Spoofed X-User-ID      │ 401          │ ✅ both                        │
+  │ (+X-Model-ID)          │              │                                │
+  ├────────────────────────┼──────────────┼────────────────────────────────┤
+  │ Key in Authorization:  │ 401          │ ✅                             │
+  │ instead                │              │                                │
+  ├────────────────────────┼──────────────┼────────────────────────────────┤
+  │ Key used on            │ 401          │ ✅ containment holds           │
+  │ /api/models            │              │                                │
+  ├────────────────────────┼──────────────┼────────────────────────────────┤
+  │ Verifier down, valid   │ 503 not 401  │ ✅                             │
+  │ key                    │              │                                │
+  ├────────────────────────┼──────────────┼────────────────────────────────┤
+  │ Verifier down, wrong   │ 503          │ ✅ correctly refuses to guess  │
+  │ key                    │              │                                │
+  ├────────────────────────┼──────────────┼────────────────────────────────┤
+  │ Recovery after restart │ 200          │ ✅ ~10s                        │
+  └────────────────────────┴──────────────┴────────────────────────────────┘
+
+  Read two of those carefully. POST /api/ml/predict → 401 does not prove the old
+  endpoint is gone — I sent no cookie, so RequireAuth rejected it before
+  routing ever reached Python. The real proof is the FastAPI route table from
+  earlier, where /api/ml/predict is absent. And "wrong key while Java is down →
+  503" is the decision working exactly as intended: with the verifier
+  unreachable the gateway refuses to call a bad key bad, because it genuinely
+  cannot tell.
+
+  A measurement worth keeping: predictions run ~0.57s each with the model cache
+  already warm. That time is almost entirely the two Java round trips — verify,
+  then resolve the deployment. It's the hot-path cost decision 3 recorded, now
+  with a number on it. Caching verified keys in the Redis that's already sitting
+  in compose would take most of it back.
+
+  Four checks still need your browser session, since they require minting or
+  revoking: the 409 for a model with no deployment, a revoked key going dead,
+  deleting a model that has a key (decision 6 — the most valuable one left), and
+  confirming the old predict route 404s behind a valid cookie.
+
+  ---
+
+  Revoke that key. You pasted a live credential into a transcript that this
+  brief says will be published in a public repository. It's in my context and in
+  your scrollback. It authorizes predictions on model 7a51b5ab for anyone who
+  reads it. Revoking it from the API Access card is one click, and it doubles as
+  the revocation test you still need.
+
+✻ Worked for 2m 1s
+
+※ recap: We're building API-key model serving; all seven commits are written and the external endpoints tested green against your local stack. Next: revoke the pasted key, which also covers the revocation test you still need.
+
+❯ Spawn a subagent to do two things while you work on something else, and don't 
+  wait for it.                                                                  
+                                                                                
+  (1) Write planning/manual-test-log.md from the results below — the manual     
+  checks we ran against the serving path, since neither Python nor Java has     
+  automated tests. Record command, expected status, actual status. Mask every   
+  API key to its first eight characters. Note explicitly that check 9 was not   
+  run and why.                                                                  
+                                                                                
+  go test ./... (go-gateway) → ok: middleware, proxy                            
+  Deploy button on experiment #3 → row shows "Deployed"                         
+  Predict from the UI (new /api/ml/models/{id}/predict) → NOT RUN               
+  GET /api/serve/schema, valid key → 200, features: Pclass, Sex, Age, SibSp,    
+  Parch, Fare, Embarked_C, Embarked_Q                                           
+  POST /api/serve/predict, valid key → 200,                                     
+  {"predictions":[1],"model_id":"7a51b5ab…","model_title":"test"}               
+  GET /api/serve/schema, no header → 401 {"message":"Missing X-API-Key header"} 
+  GET /api/serve/schema, unknown key → 401 {"message":"Invalid API key"}        
+  POST /api/serve/predict, wrong columns → 400 with expected / received /       
+  missing all populated                                                         
+  Key whose model has no deployed experiment → NOT RUN, cut for time            
+  docker compose stop java-service, then valid key → 503 {"message":"Key        
+  verification unavailable"}                                                    
+  (2) Write planning/tasks.md as a checklist derived from the commit plan in    
+  spec.md, marking what shipped and what was cut.                               
+
+● Agent(Write test log and task checklist)
+  ⎿  Backgrounded agent (↓ to manage · ctrl+o to expand)
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ Spawn a subagent to do two things while you work on something else, and don't 
+  wait for it.                                                                  
+                                                                                
+  (1) Write planning/manual-test-log.md from the results below — the manual     
+  checks we ran against the serving path, since neither Python nor Java has     
+  automated tests. Record command, expected status, actual status. Mask every   
+  API key to its first eight characters. Note explicitly that check 9 was not   
+  run and why.                                                                  
+                                                                                
+  go test ./... (go-gateway) → ok: middleware, proxy                            
+  Deploy button on experiment #3 → row shows "Deployed"                         
+  Predict from the UI (new /api/ml/models/{id}/predict) → NOT RUN               
+  GET /api/serve/schema, valid key → 200, features: Pclass, Sex, Age, SibSp,    
+  Parch, Fare, Embarked_C, Embarked_Q                                           
+  POST /api/serve/predict, valid key → 200,                                     
+  {"predictions":[1],"model_id":"7a51b5ab…","model_title":"test"}               
+  GET /api/serve/schema, no header → 401 {"message":"Missing X-API-Key header"} 
+  GET /api/serve/schema, unknown key → 401 {"message":"Invalid API key"}        
+  POST /api/serve/predict, wrong columns → 400 with expected / received /       
+  missing all populated                                                         
+  Key whose model has no deployed experiment → NOT RUN, cut for time            
+  docker compose stop java-service, then valid key → 503 {"message":"Key        
+  verification unavailable"}                                                    
+  (2) Write planning/tasks.md as a checklist derived from the commit plan in    
+  spec.md, marking what shipped and what was cut.                               
+                                                                                
+  Then run /security-review yourself on this branch.                            
+
+● Subagent's already running with those two documents. Now the security review.
+
+● Skill(security-review)
+  ⎿  Successfully loaded skill
+● Security Review — feat/model-serving-api
+
+  Verdict
+
+  No HIGH or MEDIUM findings meeting the confidence bar.
+
+  This PR introduces a new public trust boundary, so the review focused on
+  whether that boundary can be crossed, widened, or bypassed. It holds. Notably,
+  the PR also removes a pre-existing vulnerability rather than adding one — see
+  "Security improvements" below.
+
+  ---
+
+  Findings
+
+  None at HIGH or MEDIUM confidence ≥8.
+
+  ---
+
+  Candidates examined and excluded
+
+  Recorded because a bare "nothing found" is not reviewable.
+
+  1. Path injection into the Java URL via model_id — excluded (no proven impact)
+
+  python-ml-service/prediction.py:29 interpolates model_id into a URL without
+  validating it as a UUID:
+
+  f"{JAVA_SERVICE_URL}/api/models/{model_id}/deployment"
+
+  Through the external door this is not reachable: X-Model-ID is set by the
+  gateway from Java's verify response, so it is always a UUID read out of the
+  database. Through the browser door (/api/ml/models/{model_id}/predict) the
+  value is caller-controlled and typed str, so ../ sequences can reach the URL
+  builder.
+
+  Excluded because no privilege is gained. X-User-ID on that request is the
+  caller's own gateway-asserted identity, and every /api/* endpoint reachable by
+  traversal is already reachable by that same caller through the gateway with
+  the same identity. The only path outside /api/ is /internal/api-keys/verify,
+  which is POST-only while this call is a GET. The authority component cannot be
+  influenced, so this controls the path only — excluded under the SSRF
+  precedent and the input-validation exclusion.
+
+  Still worth fixing as hardening: typing the parameter model_id: UUID in
+  sklearn_router.py closes it at the boundary and costs one word.
+
+  2. Unauthenticated /internal/api-keys/verify — excluded (not newly introduced)
+
+  InternalApiKeyController authenticates nothing, and SecurityConfig is
+  anyRequest().permitAll(). It is protected only by network isolation: compose
+  binds Java to 127.0.0.1, and no gateway route proxies outside /api/.
+
+  Excluded because it grants an attacker with that network position nothing they
+  did not already have. The pre-existing architecture trusts X-User-ID on every
+  Java and Python endpoint, so anyone who can reach java-service:8081 can
+  already impersonate any user directly. The verify endpoint only maps a key the
+  attacker already holds to its owner. This is documented as a known boundary
+  in planning/decisions.md §8 with the correct production remedy (shared secret
+  or mTLS).
+
+  3. Forged verify response on the gateway→Java hop — excluded (not newly 
+  introduced)
+
+  Same reasoning as §2. An attacker able to forge that response could assert any
+  identity, but the same network position already permits setting X-User-ID
+  directly.
+
+  4. Unsalted SHA-256 for key storage — excluded (correct for the input)
+
+  ApiKey.keyHash stores unsalted SHA-256. This is correct, not weak: the input
+  is 32 bytes of SecureRandom (ApiKeyService.generate()), so there is no
+  low-entropy guess space for a salt or a work factor to protect. Matches
+  standard practice for high-entropy bearer tokens.
+
+  5. Key disclosure through logs — excluded (verified absent)
+
+  Traced the plaintext key end to end. gin.Default()'s logger records method and
+  path only, and the key travels in a header at the gateway and in a POST body
+  to Java — deliberately not in a URL path (InternalApiKeyController:33).
+  show-sql: false. proxy.To strips X-API-Key before the request continues, so
+  Python never receives it. Confirmed by
+  reverse_proxy_test.go:TestTo_SetsIdentityFromContext.
+
+  6. XSS in ApiKeysCard.tsx — excluded (React, no unsafe sink)
+
+  No dangerouslySetInnerHTML. Excluded per framework precedent.
+
+  ---
+
+  Authorization checks verified sound
+
+  - ApiKeyController.createKey/listKeys/deleteKey — all three check model
+    ownership before acting. deleteKey additionally verifies
+    key.getModel().getId().equals(modelId), so owning any model is not
+    sufficient to revoke a key attached to another.
+  - ModelController.setDeployment — verifies the model is the caller's and that
+    the experiment belongs to that model, so a foreign experiment cannot be
+    deployed into an owned model.
+  - proxy.To — Del on X-User-ID and X-Model-ID before Set closes header spoofing
+    on every route, including the pre-existing protected group where it was
+    previously masked only by each route happening to overwrite them. Covered by
+    TestTo_StripsSpoofedIdentityHeaders.
+  - Route containment — the external group registers exactly two paths. A valid
+    API key presented to /api/models returns 401, confirming a key cannot open
+    browser-only routes.
+  - 503 on verifier failure (apikey.go:52) correctly refuses to classify a key
+    when it cannot check, avoiding a false "invalid credential" signal.
+
+  ---
+
+  Security improvements delivered by this PR
+
+  Worth recording, since the net effect is a reduction in attack surface:
+
+  Removal of an unauthenticated model-load primitive. The deleted POST 
+  /api/ml/predict accepted a client-supplied model_key and passed it to
+  joblib.load — pickle deserialization — after fetching it with the Supabase
+  service key, with no ownership check whatsoever. Any authenticated user
+  holding or guessing any object path could execute a load against another
+  user's artifact. The replacement resolves the artifact server-side from
+  deployed_experiment_id, so the client never names a storage object again.
+
+✻ Cogitated for 1m 54s
+
+❯ if no curcial issue found, lets continue with /code-review                    
+
+● Right — nothing crucial. Running the code review on the branch.
+
+● Skill(code-review)
+  ⎿  Running in the background
+
+● Agent "Write test log and task checklist" finished · 4m 44s
+  ⎿  Interrupted · What should Claude do instead?
+
+● All background agents stopped
+
+❯ Background agent "/code-review high" was stopped by the user.                 
+  ⎿  Interrupted · What should Claude do instead?
+
+● No completion record was found for background agent "code-review" from the
+previous session. It may have been stopped, or it may have been running when the
+previous Claude Code process exited — either way its transcript is saved on
+disk, so its progress is not lost. Resume it by sending it a message with
+SendMessage, or check its worktree/output for partial work before assuming the
+task landed.
+
+● Two background updates while that was going on.
+
+  The /code-review run was stopped — I won't restart it unless you want it. The
+  planning subagent finished, so let me verify what it actually wrote rather
+  than take its word for it.
+  ⎿  Interrupted · What should Claude do instead?
+
+❯ okay so what are next, the pull requests and ci cd triggering?                
+
+● Before the PR, let me check what's actually uncommitted — including whether
+  the subagent's files leaked a key.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Masking held; no full key anywhere in the repo. One thing to check before
+  sequencing — how the frontend actually ships, since CI only builds three
+  services.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Yes, but four things go before the PR. Here's the order that matters.
+
+  1. Revoke the exposed key — do this first
+
+  You pasted dlp_vlFX… into a transcript this brief says gets published. It's
+  live right now against model 7a51b5ab. Revoking it in the API Access card also
+  closes out one of the untested checks.
+
+  2. Commit what's outstanding
+
+  Three uncommitted pieces — the /api fix and the two planning docs the subagent
+  wrote (I verified: no full key anywhere, all masked to eight characters):
+
+  git add view-vite/src/components/ApiKeysCard.tsx
+  git commit -m "fix(web): stop doubling /api in the API key usage hint" -m
+  "VITE_GATEWAY_URL already ends in /api, so the card rendered
+  .../api/api/serve/predict. Every other caller goes through the axios client,
+  which appends to the same base — this hint was the only place building a URL
+  by hand."
+
+  git add planning/manual-test-log.md planning/tasks.md
+  git commit -m "docs(planning): record the manual test run and the task
+  checklist" -m "Python and Java ship untested, so the manual checks against the
+  serving path are the evidence that stands in for them. Two checks were not
+  run and say so rather than being omitted: the UI predict path, and the 409 for
+  a model with no deployed experiment — the one documented status code with
+  nothing behind it."
+
+  3. Run the backfill SQL
+
+  Your Java container already booted with the new schema, so the column exists.
+  Without this, every model trained before this branch loses its Predict panel
+  until someone presses Deploy — auto-deploy only fires on new completed runs.
+  The update ml_models … statement I gave earlier, in the Supabase SQL editor.
+
+  4. Then PR and merge
+
+  All three backend paths changed, so dorny/paths-filter fires all three build
+  jobs, then deploy SSHes to EC2 and restarts. Merging is the moment
+  /api/serve/* becomes publicly reachable — there's no staging step between
+  merge and production.
+
+  ---
+
+  One gap worth planning around: CI builds go, java and python only. There's no
+  frontend job, and no wrangler/vercel/netlify config in the repo — your Pages
+  deploy is configured provider-side, outside this repository. So the backend
+  and the UI ship on different tracks, and if the frontend doesn't rebuild from
+  main automatically, you'll have a live serving API that nobody can mint a key
+  for, because the API Access card only exists in the new bundle. Worth
+  confirming in the Cloudflare dashboard before you merge rather than after.
+
+  After merge, re-run the smoke test against production — same curl sequence,
+  swapping http://localhost:8080 for the DuckDNS host. The one thing that
+  genuinely differs there is TLS and Nginx in front, and Nginx is the layer most
+  likely to strip or mangle a custom X-API-Key header.
+
+✻ Sautéed for 1m 48s
+
+※ recap: The goal was letting people call trained models from outside the browser via API keys, and that's built, tested, and committed except three files. Next: revoke the key you pasted, commit those three, then open the PR. (disable recaps in /config)
+
+❯ as soon as I push the commit, coudflare automatically detects that and        
+  triggers new deploy. so I think there isn't any problem in frontend C too     
+
+● Good — that closes the gap. Two things it leaves, both small.
+
+  The two tracks won't land together. Cloudflare builds a Vite bundle in ~20
+  seconds; the EC2 path does three docker builds, pushes to Docker Hub, then
+  SSHes and restarts. So the frontend almost certainly goes live first, and for
+  a few minutes the deployed UI will show the API Access card and Deploy buttons
+  against a backend that still 404s /models/{id}/api-keys and PUT /deployment.
+  Harmless and self-healing, but if you check the site the moment the Cloudflare
+  build goes green and see failures, that's what it is — wait for the Actions
+  run to finish before concluding anything is broken.
+
+  The key card is now a config canary. ApiKeysCard renders VITE_GATEWAY_URL as
+  visible text — the first UI in this app that does. Vite bakes that in at build
+  time from Cloudflare's environment variable, not from the repo's .env (which
+  still says localhost:8080/api). So after the deploy, the URL shown in that
+  card tells you immediately whether Cloudflare's env var is set correctly. If
+  it reads localhost, the whole deployed bundle is pointing at the wrong gateway
+  and always was — you'd just never had a screen that showed it.
+
+  Beyond that: revoke the key, the two commits, the backfill SQL, then merge.
+
+✻ Baked for 22s
+
+❯ Okey I will give it a check that is not crucial right? Now I am trying to     
+  merge with pull request, but it says " Can’t automatically merge. Don’t       
+  worry, you can still create the pull request.                                 
+  " is there a merge conflict can you check?                                    
+
+● The canary check isn't crucial — the deployed site already works, so that env
+  var is already right. It's a free glance, not a gate.
+
+  Let me look at the conflict.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● main has one commit the branch doesn't. Let me find what actually collides.
+  Ran 1 shell command (ctrl+o to expand)
+
+● One conflict, in CLAUDE.md. Both sides appended rules to the same spot. Let me
+  see exactly what each added.
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Yes — one conflict, in CLAUDE.md, and it's a false alarm in substance.
+
+  Both sides appended bullets to the same anchor at the end of the file:
+
+  - main added the "Check current docs before writing against a library API"
+    bullet.
+  - your branch added a "Planning artifacts live in planning/" bullet plus that 
+    same Context7 bullet, byte-for-byte identical.
+
+  So the branch's version is a strict superset of main's. Git can't see that —
+  it just sees two additions at the same line and refuses to guess. Nothing was
+  actually edited differently on the two sides; the Context7 rule was simply
+  written twice, once on each branch.
+
+  Resolution: keep the branch's version. Commit your three outstanding pieces
+  first so the tree is clean, then:
+
+  git merge origin/main
+  # CONFLICT (content): Merge conflict in CLAUDE.md
+  git checkout --ours CLAUDE.md
+  git add CLAUDE.md
+  git commit --no-edit
+  git push
+
+  The one thing easy to get backwards: during a merge into your branch, --ours
+  means your branch (feat/model-serving-api) and --theirs means origin/main.
+  --ours is what you want here — it keeps both bullets, since your side already
+  has main's.
+
+  After that the PR will go green. Worth eyeballing CLAUDE.md before you push to
+  confirm it ends with both bullets and no <<<<<<< markers left in it:
+
+  tail -15 CLAUDE.md
+
+  Want me to run the merge and resolve it, or will you take it from here?
+
+✻ Brewed for 1m 14s
+
+※ recap: The API key serving feature is built, tested, and committed; you're merging it to main. Next: commit the three outstanding files, then merge origin/main and resolve the CLAUDE.md conflict by keeping your branch's version. (disable recaps in /config)
+
+❯ okay go on with resolving it                                                  
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Git auto-merged the Context7 bullet (it's identical on both sides) — the only
+  real conflict is the planning-artifacts bullet, which only your branch has.
+  Taking your side:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Clean — both bullets present, no markers. Committing the merge:
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Merge resolved and committed. origin/main is now an ancestor of your branch,
+  so the PR will go green.
+
+  44956a6  Merge remote-tracking branch 'origin/main' into
+  feat/model-serving-api
+  b5942a4  documents and logs added
+  d8b1a4b  fix(web): stop doubling /api in the API key usage hint
+
+  Authored as you, no co-author trailers. I haven't pushed — that's yours:
+
+  git push
+
+  Two optional tidy-ups before you do, both on unpushed commits:
+
+  The merge message kept git's comment lines. --no-edit left # Conflicts: / # 
+  CLAUDE.md in the body. Harmless, just noise:
+
+  git commit --amend -m "Merge origin/main into feat/model-serving-api" -m "Both
+  branches appended to the end of CLAUDE.md and the Context7 bullet was written
+  twice, once on each side. Kept the branch version, which already contained
+  main's."
+
+  b5942a4 documents and logs added breaks your own convention. BRIEF.md and
+  CLAUDE.md both call for conventional commits with a scope, and every other
+  commit on this branch follows it. It's the last commit before push, so it's
+  still cheap to fix:
+
+  git rebase -i HEAD~2   # reword b5942a4
+
+  or if it's the only thing you'd change, docs(planning): record the manual test
+  run and the task checklist matches the rest of the history.
+
+✻ Sautéed for 1m 4s
+
+※ recap: You're shipping the API-key model serving feature on feat/model-serving-api. The merge conflict in CLAUDE.md is resolved and committed, so the PR will merge cleanly now. Next: run git push, then open and merge the PR. (disable recaps in /config)
+
+❯ so I need a detailed description for the pull request. Explain eveything we   
+  did for this feature. I set the title as: "feat: external model access with   
+  API keys, successfully deploying the model for inference"                     
+
+  Ran 1 shell command (ctrl+o to expand)
+
+● Here's the PR body. Paste as-is under your title.
+
+  ## The problem
+
+  The platform could train a useful model and then strand it. A trained model
+  was
+  reachable only by being logged into the web UI and clicking through the
+  predict
+  page — no way to call it from a script, a backend job, or a spreadsheet tool.
+
+  This adds a deliberate second entrance: a model-scoped **API key** that lets
+  an
+  outside caller run one model over HTTP with no browser session.
+
+  ## What a user does
+
+  1. Train a model as before.
+  2. Press **Deploy** on a run in Training History — that run becomes what the
+  model serves.
+  3. Under **API Access**, create a key. It is shown exactly once.
+  4. Call it:
+
+  ```bash
+  curl -H "X-API-Key: dlp_..." https://<gateway>/api/serve/schema
+  # { "model_id": "...", "model_title": "test", "features":
+  ["Pclass","Sex","Age",...] }
+
+  curl -X POST https://<gateway>/api/serve/predict \
+    -H "X-API-Key: dlp_..." -H "Content-Type: application/json" \
+    -d '{"data":[{"Pclass":3,"Sex":0,"Age":22,...}]}'
+  # { "predictions": [1], "model_id": "...", "model_title": "test" }
+  ```
+
+  ## Design
+
+  Full reasoning in `planning/decisions.md` (13 numbered decisions, each naming
+  what
+  was rejected). `planning/spec.md` is what got built. The load-bearing choices:
+
+  **Two doors, one implementation.** The browser keeps its cookie path; the
+  outside
+  world gets a key path. Both prove identity at the gateway and converge on a
+  single
+  `run_prediction()` in Python, so the ownership rule exists in exactly one
+  place.
+
+  ```
+  browser  ──cookie──▶  gateway ─RequireAuth───▶  POST
+  /api/ml/models/{id}/predict ─┐
+
+    ├─▶ run_prediction()
+  script   ─X-API-Key─▶  gateway ─RequireAPIKey─▶  POST /api/serve/predict
+     ─┘
+                            │
+                            └──▶ java  POST /internal/api-keys/verify
+  ```
+
+  **A key authorizes one model, not one account.** Handing a key to a contractor
+  cannot leak the rest of your models, and revoking it cannot break your other
+  integrations. This also dissolves a whole error case: "right credentials,
+  wrong
+  model" cannot happen, so there is no status code for it.
+
+  **The key alone names the model.** `/api/serve/predict` takes no model id — a
+  path
+  parameter would be redundant with the key and could only ever disagree with
+  it. The
+  response echoes `model_id` and `model_title` so the wrong key in the wrong
+  script
+  shows up as a wrong title rather than as confident predictions from a model
+  you did
+  not mean.
+
+  **Verification happens at the gateway, not in Python.** `RequireAPIKey`
+  mirrors
+  `RequireAuth`: it resolves the key by asking Java, then sets `X-User-ID` and
+  `X-Model-ID` downstream. This preserves a single meaning for `X-User-ID`
+  everywhere —
+  always gateway-asserted, never self-declared — so every existing ownership
+  check in
+  Java and Python keeps working untouched. The cost is real and recorded:
+  external
+  predictions now need Java on the request path, measured at ~0.57s per call,
+  almost
+  entirely the two Java round trips.
+
+  **`503`, not `401`, when the verifier is down.** With Java unreachable the
+  gateway
+  cannot tell a good key from a bad one. Answering `401` asserts something it
+  does not
+  know and tells the caller to rotate a key that was never bad — automate that
+  and an
+  outage becomes a stampede of key regeneration.
+
+  **Deployment is an explicit pointer.** `ml_models.deployed_experiment_id`
+  replaces
+  an implicit rule (`Process.tsx` used whichever completed run sorted first),
+  which
+  would have meant retraining silently changing what external callers receive.
+  The
+  first completed run auto-deploys so nothing regressed; every change after that
+  is a
+  button press.
+
+  ## Security
+
+  **This PR removes a vulnerability rather than adding one.** The deleted
+  `POST /api/ml/predict` accepted a client-supplied `model_key` and passed it to
+  `joblib.load` — pickle deserialization — after fetching it with the Supabase
+  service
+  key, with **no ownership check at all**. Any authenticated user holding any
+  object
+  path could load another user's artifact. It is deleted, not patched; the
+  server now
+  resolves the artifact from the deployment pointer and the client never names a
+  file.
+
+  Other hardening in scope:
+
+  - `proxy.To` now `Del`s `X-User-ID`, `X-Model-ID` and `X-API-Key` before
+  setting the
+    first two. Previously `Set` alone left a client-supplied identity header
+  intact on
+    any route whose middleware did not happen to overwrite it.
+  - The raw key is stripped at the gateway and never reaches Python.
+  - Keys are 32 bytes of `SecureRandom`, stored as SHA-256 under a unique index.
+  Not
+    bcrypt: bcrypt exists to slow guessing of low-entropy passwords, and there
+  is no
+    guess space here to protect.
+  - The key travels to Java in a POST body, never a URL path, so it stays out of
+  access
+    logs.
+  - `/api/serve/*` gets no CORS entry, so browser cross-origin calls fail
+  preflight. A
+    key in frontend JavaScript is a published key. Deliberate, and recorded as
+  such.
+
+  A `/security-review` pass over the branch found **no HIGH or MEDIUM issues**.
+
+  **One known boundary, documented not assumed:** `/internal/api-keys/verify`
+  authenticates nothing. `SecurityConfig` is `anyRequest().permitAll()`, so it
+  is
+  guarded only by compose binding backends to `127.0.0.1` and by no gateway
+  route
+  proxying outside `/api/`. That holds on a single host and stops holding the
+  moment
+  these services share a network with anything else. Production wants a shared
+  secret
+  or mTLS on that hop.
+
+  ## Changes by service
+
+  | Service | What changed |
+  |---|---|
+  | `go-gateway` | New `RequireAPIKey` middleware; one new route group
+  (`/api/serve/predict`, `/api/serve/schema`); identity-header hygiene in
+  `proxy.To` |
+  | `java-service` | `ApiKey` entity + repository + service; key CRUD;
+  `/internal/api-keys/verify`; `deployed_experiment_id` on `MlModel` with deploy
+  endpoints; key cleanup in `deleteModel` |
+  | `python-ml-service` | New `prediction.py` holding the shared
+  `run_prediction`/`model_schema`; new `serve_router`; model-scoped browser
+  predict; **deleted** `/api/ml/predict`; `@lru_cache(maxsize=4)` on model
+  loading |
+  | `view-vite` | Deploy buttons per run; `ApiKeysCard`; predict repointed at
+  the model id; column-mismatch errors now name the missing columns |
+
+  Two schema changes, both created by `ddl-auto: update` — no hand-written SQL,
+  so a
+  fresh clone gets a working database.
+
+  ## Testing
+
+  **9 Go tests, zero new dependencies** (`testing` + `net/http/httptest` are
+  stdlib).
+  They cover the boundary the whole feature rests on: missing header, unknown
+  key,
+  verifier 500, verifier timeout, a partial verify response, and the happy path
+  —
+  plus proxy tests asserting spoofed identity headers are stripped and the raw
+  key
+  never reaches downstream.
+
+  **Manual run against a live local stack** is recorded in
+  `planning/manual-test-log.md`, with keys masked. All checks passed:
+
+  | Check | Result |
+  |---|---|
+  | schema + predict with a valid key | 200, correct features and echoed
+  identity |
+  | shuffled column order | same prediction — reindexed to training order |
+  | wrong columns | 400 naming expected / received / missing |
+  | no key, wrong key, cookie-only, spoofed `X-User-ID`, key in `Authorization`
+  | all 401 |
+  | **key used against `/api/models`** | 401 — containment holds |
+  | `java-service` stopped | 503, and recovers on restart |
+
+  **Not tested, and stated rather than omitted:** the UI predict path, and the
+  `409`
+  for a model with no deployed experiment — the one documented status code with
+  no
+  evidence behind it. Python and Java ship with no automated tests at all; the
+  Go test
+  covers the gateway boundary only.
+
+  ## Deliberately cut
+
+  Full list in `planning/decisions.md`. The ones a reviewer should know: no
+  frozen
+  version pinning (a redeploy changes what a key answers with — that is what
+  deploy
+  means), no key expiry or rotation, no rate limiting or quotas, no
+  `last_used_at`,
+  no caching of verified keys, and no mTLS on the internal hop.
+
+  ## Before/after merging
+
+  - **Run the backfill** — models trained before this branch have
+    `deployed_experiment_id = NULL`, so their Predict panel stays hidden until
+  someone
+    presses Deploy. Auto-deploy only fires on new runs. The one-time `UPDATE` is
+  in the
+    review thread.
+  - **Two deploy tracks** — CI builds go/java/python and restarts EC2;
+  Cloudflare
+    rebuilds the frontend on push. The frontend will land first, so briefly the
+  UI will
+    show Deploy buttons and the key card against a backend that still 404s them.
+  - **Cloning this branch** — `docker compose up -d` runs published images,
+  which CI
+    pushes only from `main`. The README names the three `docker build` commands
+  needed
+    to try this before merge.
+
+  Two notes on the title you picked: "successfully deploying the model for
+  inference" reads as a status report rather than a change. feat: external model
+  access with API keys alone says it, and the Deploy control is covered in the
+  body. Your call — GitHub titles are cheap to edit later.
+
+✻ Churned for 52s
+
+※ recap: You built API-key access so trained models can be called from outside the browser; the branch is complete, merged with main, and the PR description is written. Next: push the branch, open the PR, and revoke the API key you pasted earlier.
