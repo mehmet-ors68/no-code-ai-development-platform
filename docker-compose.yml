@@ -26,8 +26,18 @@ services:
       - "127.0.0.1:8081:8081"
     env_file:
       - .env
+    # The box has 1GB and no container had a memory cap, so the JVM sized itself against
+    # the whole host and the kernel OOM-killed it five times on 19-21 Aug, the last one
+    # taking the entire instance unresponsive. mem_limit makes Docker kill just this
+    # container instead of letting the kernel pick a victim.
+    mem_limit: 512m
     environment:
-      - JAVA_TOOL_OPTIONS=-Djava.net.preferIPv4Stack=true
+      # -Xmx is explicit rather than left to the default (1/4 of visible RAM): with a
+      # container limit the JVM would still need MaxRAMPercentage tuning, and a fixed
+      # number is one less thing that changes when the instance size changes.
+      # Metaspace is capped too - it lives OUTSIDE the heap and is what usually pushes
+      # a "256m heap" JVM past 450MB of RSS.
+      - JAVA_TOOL_OPTIONS=-Djava.net.preferIPv4Stack=true -Xms128m -Xmx256m -XX:MaxMetaspaceSize=128m
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/healthz"]
       interval: 10s
@@ -66,6 +76,9 @@ services:
   python-ml-service:
     image: plokoon68/ai-dev-platform-python-ml-service:latest
     restart: unless-stopped
+    # pandas reads the whole upload into memory; nginx caps bodies at 10M but a few
+    # concurrent uploads still add up on a 1GB box.
+    mem_limit: 384m
     # Loopback-only — same reasoning as java-service: X-User-ID is trusted, not verified.
     ports:
       - "127.0.0.1:8000:8000"

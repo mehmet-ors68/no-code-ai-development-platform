@@ -2,10 +2,12 @@ package com.aiplatform.javaservice.controller;
 
 import com.aiplatform.javaservice.dto.CreateExperimentRequest;
 import com.aiplatform.javaservice.dto.CreateModelRequest;
+import com.aiplatform.javaservice.dto.SetDeploymentRequest;
 import com.aiplatform.javaservice.dto.UpdateModelRequest;
 import com.aiplatform.javaservice.model.Experiment;
 import com.aiplatform.javaservice.model.MlModel;
 import com.aiplatform.javaservice.model.ModelSpec;
+import com.aiplatform.javaservice.repository.ApiKeyRepository;
 import com.aiplatform.javaservice.repository.ExperimentRepository;
 import com.aiplatform.javaservice.repository.MlModelRepository;
 import com.aiplatform.javaservice.repository.ModelSpecRepository;
@@ -29,6 +31,7 @@ public class ModelController {
     private final MlModelRepository mlModelRepository;
     private final ModelSpecRepository modelSpecRepository;
     private final ExperimentRepository experimentRepository;
+    private final ApiKeyRepository apiKeyRepository;
 
     // GET /api/models — list all models for the authenticated user (lightweight, no spec)
     @GetMapping
@@ -98,6 +101,7 @@ public class ModelController {
 
     // DELETE /api/models/:id — cascade deletes specs + experiments via FK constraints
     @DeleteMapping("/{id}")
+    @Transactional
     public ResponseEntity<Map<String, String>> deleteModel(
             @PathVariable UUID id,
             @RequestHeader("X-User-ID") String userId) {
@@ -105,6 +109,13 @@ public class ModelController {
         MlModel model = mlModelRepository.findById(id).orElse(null);
         if (model == null) return ResponseEntity.notFound().build();
         if (!model.getUserId().equals(UUID.fromString(userId))) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+
+        // The specs/experiments cascade was applied to Postgres by hand; api_keys was
+        // created by ddl-auto, which writes the foreign key with the default NO ACTION.
+        // Without this line, deleting any model that ever had a key fails on a
+        // constraint violation. Doing it in code rather than out-of-band SQL means a
+        // fresh clone behaves the same as the deployed database.
+        apiKeyRepository.deleteByModelId(id);
 
         mlModelRepository.deleteById(id);
         // ModelSpec and Experiment rows deleted automatically by ON DELETE CASCADE
@@ -187,8 +198,72 @@ public class ModelController {
             return ResponseEntity.notFound().build();
         }
 
+        // Deleting the deployed run must not leave the pointer aimed at a row that is
+        // gone: every serving request resolves through it, and a dangling UUID would
+        // turn "nothing deployed" into a lookup failure on the request path.
+        MlModel model = exp.getModel();
+        if (expId.equals(model.getDeployedExperimentId())) {
+            model.setDeployedExperimentId(null);
+            mlModelRepository.save(model);
+        }
+
         experimentRepository.deleteById(expId);
         return ResponseEntity.ok(Map.of("message", "Experiment deleted"));
+    }
+
+    // PUT /api/models/:id/deployment — choose which trained run this model serves.
+    // Switching is the only operation: there is no undeploy, because the UI offers
+    // one Deploy button per run and clicking another moves the pointer.
+    @PutMapping("/{id}/deployment")
+    public ResponseEntity<?> setDeployment(
+            @PathVariable UUID id,
+            @RequestBody SetDeploymentRequest req,
+            @RequestHeader("X-User-ID") String userId) {
+
+        MlModel model = mlModelRepository.findById(id).orElse(null);
+        if (model == null) return ResponseEntity.notFound().build();
+        if (!model.getUserId().equals(UUID.fromString(userId))) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+
+        Experiment exp = experimentRepository.findById(req.experimentId()).orElse(null);
+        if (exp == null || !exp.getModel().getId().equals(id)) {
+            return ResponseEntity.notFound().build();
+        }
+        // A failed run has no artifact behind it. Refusing here keeps the invariant the
+        // serving path depends on: a non-null pointer always resolves to loadable bytes.
+        if (!"completed".equals(exp.getStatus()) || exp.getModelFilePath() == null) {
+            return ResponseEntity.badRequest().body(Map.of("message", "Experiment has no trained artifact to deploy"));
+        }
+
+        model.setDeployedExperimentId(exp.getId());
+        mlModelRepository.save(model);
+
+        return ResponseEntity.ok(Map.of("deployedExperimentId", exp.getId().toString()));
+    }
+
+    // GET /api/models/:id/deployment — everything the serving path needs, in one call.
+    // Python asks this once per prediction; resolving the same answer from GET /:id plus
+    // GET /:id/experiments would be two round trips and two ownership checks.
+    @GetMapping("/{id}/deployment")
+    public ResponseEntity<?> getDeployment(
+            @PathVariable UUID id,
+            @RequestHeader("X-User-ID") String userId) {
+
+        MlModel model = mlModelRepository.findById(id).orElse(null);
+        if (model == null) return ResponseEntity.notFound().build();
+        if (!model.getUserId().equals(UUID.fromString(userId))) return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+
+        UUID deployedId = model.getDeployedExperimentId();
+        Experiment exp = deployedId == null ? null : experimentRepository.findById(deployedId).orElse(null);
+        if (exp == null) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of("message", "Model has no deployed experiment"));
+        }
+
+        return ResponseEntity.ok(Map.of(
+                "modelId",       model.getId().toString(),
+                "modelTitle",    model.getTitle(),
+                "experimentId",  exp.getId().toString(),
+                "modelFilePath", exp.getModelFilePath()
+        ));
     }
 
     // POST /api/models/:id/experiments — save training run result (called by frontend after Python returns)
@@ -214,11 +289,19 @@ public class ModelController {
         exp.setDurationMs(req.durationMs());
         exp.setModelFilePath(req.modelKey());
 
-        experimentRepository.save(exp);
+        Experiment savedExp = experimentRepository.save(exp);
 
         // Update model status to "trained" on successful run
         if ("completed".equals(exp.getStatus())) {
             model.setStatus("trained");
+            // Auto-deploy the first completed run. Without this, adding the deployment
+            // pointer would silently break predict for everyone: the page used to serve
+            // whichever completed run sorted first, and would now serve nothing until
+            // the user discovered a button that did not exist yesterday. Later runs
+            // never move the pointer on their own — that stays an explicit choice.
+            if (model.getDeployedExperimentId() == null && savedExp.getModelFilePath() != null) {
+                model.setDeployedExperimentId(savedExp.getId());
+            }
             mlModelRepository.save(model);
         }
 

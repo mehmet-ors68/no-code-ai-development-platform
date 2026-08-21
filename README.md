@@ -67,13 +67,14 @@ Java Spring Boot :8081      Python FastAPI :8000
 ## Current Status
 
 ### ✅ Working
-- **Go Gateway** — JWT middleware, HTTP routing to Java and Python services, CORS, `GET /api/me` lightweight auth check
-- **Java Spring Boot** — user registration/login (bcrypt + JWT, SameSite=None cookie for cross-origin), model CRUD, experiment history
-- **Python ML Service** — `/api/ml/train` (4 sklearn algorithms), `/api/ml/predict` (Supabase Storage), model file stored in Supabase Storage
+- **Go Gateway** — JWT middleware, API-key middleware for external callers, HTTP routing to Java and Python services, CORS, `GET /api/me` lightweight auth check
+- **Java Spring Boot** — user registration/login (bcrypt + JWT, SameSite=None cookie for cross-origin), model CRUD, experiment history, API key issuing and verification
+- **Python ML Service** — `/api/ml/train` (4 sklearn algorithms), predict by model id, model file stored in Supabase Storage
+- **External model serving** — `/api/serve/*`, called with an API key from outside the browser
 - **Redis** — running, wired to gateway
-- **PostgreSQL (Supabase)** — users, models, model specs, experiments
+- **PostgreSQL (Supabase)** — users, models, model specs, experiments, api keys
 - **Docker Compose** — all 4 services start with a single command
-- **React + TypeScript frontend** — auth flow, My Models page, Process page (train + history + predict)
+- **React + TypeScript frontend** — auth flow, My Models page, Process page (train + history + deploy + predict + API keys)
 - **Production deployment** — AWS EC2 t3.micro, Nginx + Let's Encrypt, DuckDNS subdomain
 - **CI/CD** — GitHub Actions: build → Docker Hub → EC2 restart on every push to main
 
@@ -211,8 +212,8 @@ POST   /api/models/:id/specs         { modelType, config, datasetPath }
 ### ML (protected)
 
 ```
-POST /api/ml/train      { model_type, dataset, target_column, hyperparameters?, test_size? }
-POST /api/ml/predict    { model_url, data }
+POST /api/ml/train                   { model_type, dataset, target_column, hyperparameters?, test_size? }
+POST /api/ml/models/:id/predict      { data }
 ```
 
 **Supported `model_type` values:** `linear_regression`, `logistic_regression`, `random_forest_classifier`, `random_forest_regressor`
@@ -221,9 +222,74 @@ POST /api/ml/predict    { model_url, data }
 ```json
 {
   "metrics": { "accuracy": 0.95 },
-  "model_url": "<Supabase Storage URL — pass this to /predict later>"
+  "model_key": "models/<uuid>.joblib"
 }
 ```
+
+`model_key` is an object path in a private bucket, not a link. It is saved on the
+experiment row and resolved server-side; predict names the *model*, so ownership can be
+checked against something the client does not choose.
+
+### Serving (external — API key required)
+
+The only routes reachable without a browser session. Authenticated by an `X-API-Key`
+header instead of the JWT cookie. A key is created in the UI on a model's page and
+authorizes that one model — nothing else the user owns.
+
+```
+GET  /api/serve/schema     → { model_id, model_title, features }
+POST /api/serve/predict    { data: [ { ...row... } ] }
+```
+
+The model is not named in the URL: the key already identifies exactly one, and it
+resolves to whichever training run is currently deployed.
+
+**Try it end to end**
+
+1. Train a model, then press **Deploy** on a run under Training History.
+2. Under **API Access**, create a key and copy it — it is shown once and stored only as
+   a hash.
+3. Ask the model what it expects, rather than guessing column names:
+
+```bash
+curl -H "X-API-Key: dlp_..." http://localhost:8080/api/serve/schema
+# { "model_id": "...", "model_title": "Churn v2", "features": ["age", "income"] }
+```
+
+4. Send rows keyed by exactly those `features`:
+
+```bash
+curl -X POST http://localhost:8080/api/serve/predict \
+  -H "X-API-Key: dlp_..." \
+  -H "Content-Type: application/json" \
+  -d '{"data": [{"age": 35, "income": 150.0}]}'
+# { "predictions": [1.5], "model_id": "...", "model_title": "Churn v2" }
+```
+
+The response echoes the model it used, so the wrong key in the wrong script shows up as
+a wrong title rather than as confident predictions from a model you did not mean.
+
+| Status | Meaning |
+|--------|---------|
+| `400` | Columns don't match — the body lists `expected`, `received` and `missing` |
+| `401` | No `X-API-Key` header, or no such key |
+| `404` | No such model, or it isn't yours |
+| `409` | The model exists but has no deployed version — deploy one |
+| `503` | The key could not be verified right now. Your key is fine; do not rotate it |
+
+Revoking is deleting the key in the UI, and takes effect on the next request. A lost key
+cannot be recovered — delete it and create another.
+
+> **Running this from a clone.** `docker compose up -d` starts *published* images, and CI
+> pushes those only on `main`. On a feature branch the routes above will 404 until you
+> rebuild the three services this feature touches:
+>
+> ```bash
+> docker build -t plokoon68/ai-dev-platform-go-gateway:latest ./go-gateway
+> docker build -t plokoon68/ai-dev-platform-java-service:latest ./java-service
+> docker build -t plokoon68/ai-dev-platform-python-ml-service:latest ./python-ml-service
+> docker compose up -d
+> ```
 
 ---
 
@@ -233,13 +299,19 @@ POST /api/ml/predict    { model_url, data }
 
 **Gateway injects X-User-ID header** — JWT is validated once at the gateway; downstream services read `X-User-ID` from the header instead of parsing JWT themselves. Java and Python never see the raw token.
 
+**API keys are verified at the gateway, not in Python** — `RequireAPIKey` resolves the key to its owner and its one model by asking Java, then sets `X-User-ID` and `X-Model-ID` for downstream services. This keeps a single meaning for `X-User-ID` everywhere: always gateway-asserted, never self-declared, so every ownership check already in Java and Python keeps working unchanged. The cost is that external predictions now need Java on the request path — recorded in `planning/decisions.md`.
+
+**A key authorizes one model, not one account** — handing a key to a contractor cannot leak the rest of your models, and revoking it cannot break your other integrations. Keys are 32 bytes of `SecureRandom` stored as SHA-256 under a unique index; the plaintext exists only in the response that creates it.
+
+**Deployment is an explicit pointer** — `ml_models.deployed_experiment_id` names which training run answers requests. It used to be whichever completed run sorted first, which meant retraining silently changed what callers got. The first completed run auto-deploys so nothing regressed; every change after that is a button press.
+
 **Supabase Session Pooler** — Supabase's direct connection endpoint is IPv6-only. Docker Desktop on Windows/Mac routes IPv4 only. The Session Pooler (PgBouncer) sits in front and provides an IPv4-accessible endpoint.
 
 **`env_file` instead of `environment:` in docker-compose** — Docker Compose interpolates `$VAR` patterns when using the `environment:` key. Passwords containing `$` get silently mangled. `env_file:` passes values to the container literally, bypassing interpolation.
 
 **ModelSpec versioning** — specs are immutable rows. Saving a new config creates a new row with `version + 1` and `is_active = true`; previous rows are set to `is_active = false`. Enables full config history without soft deletes.
 
-**Python owns model file storage** — the trained model is serialized with joblib and uploaded to Supabase Storage by the ML service itself, which returns only a URL. The service that produces a file is the service that stores it: Java never handles file bytes, it just persists the URL alongside the experiment row. Keeps large payloads off the Gateway and out of the database.
+**Python owns model file storage** — the trained model is serialized with joblib and uploaded to Supabase Storage by the ML service itself, which returns only an object path. The service that produces a file is the service that stores it: Java never handles file bytes, it just persists the path alongside the experiment row. Keeps large payloads off the Gateway and out of the database. The bucket is private, so the path is useless without the service key.
 
 ---
 

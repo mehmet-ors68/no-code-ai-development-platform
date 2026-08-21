@@ -1,14 +1,15 @@
 import { useState, useEffect, useRef, type ChangeEvent } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import Papa from 'papaparse'
-import { BrainCircuit, Upload, Play, ChevronLeft, CheckCircle2, XCircle, Clock, Trash2, Download } from 'lucide-react'
-import { fetchModel, saveExperiment, fetchExperiments, deleteExperiment } from '@/api/models'
+import { BrainCircuit, Upload, Play, ChevronLeft, CheckCircle2, XCircle, Clock, Trash2, Download, Rocket } from 'lucide-react'
+import { fetchModel, saveExperiment, fetchExperiments, deleteExperiment, deployExperiment } from '@/api/models'
 import { trainSklearn, predictSklearn, type SklearnAlgorithm, type TrainResult } from '@/api/ml'
 import type { ModelDetail, Experiment } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Label } from '@/components/ui/label'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import ApiKeysCard from '@/components/ApiKeysCard'
 
 // ── Sklearn algorithm metadata ────────────────────────────────────────────────
 
@@ -88,6 +89,10 @@ export default function Process() {
 
   // History
   const [experiments, setExperiments] = useState<Experiment[]>([])
+
+  // Deploy
+  const [deploying, setDeploying] = useState<string | null>(null)
+  const [deployError, setDeployError] = useState('')
 
   // ── Load model ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -183,8 +188,28 @@ export default function Process() {
     }
   }
 
+  // ── Deploy ──────────────────────────────────────────────────────────────────
+  // Which run this model answers with. Previously this was whichever completed run
+  // sorted first — an implicit choice that would silently change what an API key
+  // returns every time the user retrained.
+  const deployedId  = detail?.model.deployedExperimentId ?? null
+  const deployedExp = experiments.find(e => e.id === deployedId) ?? null
+
+  const handleDeploy = async (experimentId: string) => {
+    if (!id) return
+    setDeploying(experimentId)
+    setDeployError('')
+    try {
+      await deployExperiment(id, experimentId)
+      setDetail(await fetchModel(id))
+    } catch {
+      setDeployError('Could not deploy that version. Try again.')
+    } finally {
+      setDeploying(null)
+    }
+  }
+
   // ── Predict ──────────────────────────────────────────────────────────────────
-  const activeModel = experiments.find(e => e.status === 'completed' && e.modelFilePath)
 
   const handlePredictFile = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
@@ -201,15 +226,22 @@ export default function Process() {
   }
 
   const handlePredict = async () => {
-    if (!activeModel?.modelFilePath || !predictRows.length) return
+    if (!id || !deployedExp || !predictRows.length) return
     setPredicting(true)
     setPredictions(null)
     setPredictError('')
     try {
-      const preds = await predictSklearn(activeModel.modelFilePath, predictRows)
+      const preds = await predictSklearn(id, predictRows)
       setPredictions(preds)
-    } catch {
-      setPredictError('Prediction failed. Make sure the CSV columns match the training dataset.')
+    } catch (err: unknown) {
+      // The server names the columns it wanted, so say which ones are missing rather
+      // than making the user diff two CSVs by eye.
+      const detail = (err as { response?: { data?: { detail?: { missing?: string[] } } } })?.response?.data?.detail
+      setPredictError(
+        detail?.missing?.length
+          ? `CSV is missing these columns: ${detail.missing.join(', ')}`
+          : 'Prediction failed. Make sure the CSV columns match the training dataset.'
+      )
     } finally {
       setPredicting(false)
     }
@@ -438,7 +470,7 @@ export default function Process() {
       )}
 
       {/* Predict */}
-      {isSklearn && activeModel && (
+      {isSklearn && deployedExp && (
         <div className="space-y-4">
           <h2 className="text-lg font-semibold">Predict</h2>
           <Card>
@@ -496,10 +528,16 @@ export default function Process() {
         </div>
       )}
 
+      {isSklearn && id && <ApiKeysCard modelId={id} hasDeployment={deployedExp !== null} />}
+
       {/* Experiment history */}
       {experiments.length > 0 && (
         <div className="space-y-3">
           <h2 className="text-lg font-semibold">Training History</h2>
+          <p className="text-xs text-muted-foreground">
+            The deployed version is what Predict and any API key for this model answer with.
+          </p>
+          {deployError && <p className="text-sm text-red-400">{deployError}</p>}
           <div className="space-y-2">
             {experiments.map((exp, i) => (
               <div key={exp.id} className="rounded-lg border border-border p-4">
@@ -521,6 +559,23 @@ export default function Process() {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
+                    {exp.status === 'completed' && exp.modelFilePath && (
+                      exp.id === deployedId ? (
+                        <span className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/40 bg-emerald-500/10 px-3 py-1.5 text-xs font-medium text-emerald-400">
+                          <Rocket className="h-4 w-4" />
+                          Deployed
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => handleDeploy(exp.id)}
+                          disabled={deploying !== null}
+                          className="inline-flex items-center gap-1.5 rounded-md border border-emerald-500/40 px-3 py-1.5 text-xs font-medium text-emerald-400 hover:bg-emerald-500/10 transition-colors disabled:opacity-50"
+                        >
+                          <Rocket className="h-4 w-4" />
+                          {deploying === exp.id ? 'Deploying…' : 'Deploy'}
+                        </button>
+                      )
+                    )}
                     {exp.modelFilePath && (
                       <a
                         href={exp.modelFilePath}

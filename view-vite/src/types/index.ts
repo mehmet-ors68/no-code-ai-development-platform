@@ -5,6 +5,9 @@ export interface MlModel {
   description: string
   modelType: 'DL' | 'sklearn' | 'yolo' | 'nlp'
   status: 'draft' | 'training' | 'trained' | 'failed'
+  // Which training run this model serves — to the predict panel and to any API key
+  // pointed at it. Null until a run completes; the first completed run sets it.
+  deployedExperimentId: string | null
   createdAt: string
   updatedAt: string
 }
@@ -49,6 +52,16 @@ export interface Experiment {
   status: 'completed' | 'failed'
   durationMs: number | null
   modelFilePath: string | null  // stores model_b64 for sklearn models
+  createdAt: string
+}
+
+// A credential for calling one model from outside the browser. The plaintext key is
+// never in this shape — the server returns it once, at creation, and stores only a hash.
+// keyPrefix is the visible stub that lets a user tell two keys apart.
+export interface ApiKey {
+  id: string
+  label: string
+  keyPrefix: string
   createdAt: string
 }
 

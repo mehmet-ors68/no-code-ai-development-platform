@@ -89,6 +89,9 @@ Secrets come from `.env`, which is gitignored and must never be committed.
 - Storage buckets are private. Files are read server-side with the service key;
   the browser gets a short-lived signed URL when it needs one.
 - No new dependency without a reason worth writing down.
+- Planning artifacts live in `planning/`: specs, architecture decision records,
+  glossaries, task breakdowns, and agent handoff notes. Exported agent session
+  logs live in `logs/`. Neither kind belongs at the repository root.
 - **Check current docs before writing against a library API.** This repo pins
   specific versions of Gin, FastAPI, supabase-py, scikit-learn, axios and Spring
   Boot, and their surfaces move. When adding or changing a call into any of

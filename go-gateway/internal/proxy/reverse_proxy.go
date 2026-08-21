@@ -28,10 +28,24 @@ func To(target string) gin.HandlerFunc {
 	}
 
 	return func(c *gin.Context) {
+		// Identity is asserted by this gateway and never accepted from the caller. The
+		// Del matters: Set alone leaves a client-supplied X-User-ID untouched on any
+		// route whose middleware did not happen to overwrite it, which is one forgotten
+		// route away from letting a caller name itself.
+		c.Request.Header.Del("X-User-ID")
+		c.Request.Header.Del("X-Model-ID")
+		// The raw key has done its job at this boundary. Forwarding a live credential
+		// deeper only widens the set of logs it can land in.
+		c.Request.Header.Del("X-API-Key")
+
 		// Forward authenticated user identity — downstream services read this, no JWT needed there
-		userID := c.GetString("userID")
-		if userID != "" {
+		if userID := c.GetString("userID"); userID != "" {
 			c.Request.Header.Set("X-User-ID", userID)
+		}
+		// Set only by RequireAPIKey: an external caller names no model, so the gateway
+		// tells Python which one the key resolved to.
+		if modelID := c.GetString("modelID"); modelID != "" {
+			c.Request.Header.Set("X-Model-ID", modelID)
 		}
 		rp.ServeHTTP(c.Writer, c.Request)
 	}

@@ -4,7 +4,7 @@ import joblib
 
 import numpy as np
 import pandas as pd
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel, ConfigDict
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.linear_model import LinearRegression, LogisticRegression
@@ -12,6 +12,7 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, mean_squared_error, r2_score
 from sklearn.preprocessing import LabelEncoder
 
+from prediction import run_prediction
 from storage import get_supabase
 
 router = APIRouter()
@@ -35,8 +36,6 @@ class TrainResponse(BaseModel):
     model_key: str  # object path inside the private "ml-models" bucket
 
 class PredictRequest(BaseModel):
-    model_config = ConfigDict(protected_namespaces=())
-    model_key: str  # object path inside the private "ml-models" bucket
     data: list[dict]
 
 
@@ -83,27 +82,18 @@ def train(req: TrainRequest):
     return TrainResponse(metrics=metrics, model_key=file_key)
 
 
-@router.post("/predict")
-def predict(req: PredictRequest):
-    # Read straight from Storage with the service key. The old version fetched its
-    # own file back over public HTTP - a needless round trip that also broke the
-    # instant the bucket stopped being public.
-    try:
-        model_bytes = get_supabase().storage.from_(BUCKET).download(req.model_key)
-        payload = joblib.load(io.BytesIO(model_bytes))
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Failed to load model: {e}")
-
-    model = payload["model"]
-    le    = payload["label_encoder"]
-
-    df = pd.DataFrame(req.data)[payload["features"]]
-    preds = model.predict(df)
-
-    if le is not None:
-        preds = le.inverse_transform(preds)
-
-    return {"predictions": preds.tolist()}
+# The browser door. Replaces POST /predict, which took a model_key straight from the
+# client and downloaded it with the service key — any logged-in user holding any key
+# could run any user's model. Naming the model instead of its storage path means the
+# ownership check has something to check.
+@router.post("/models/{model_id}/predict")
+def predict_from_ui(
+    model_id: str,
+    req: PredictRequest,
+    # Go Gateway validates the JWT and injects this on every /api/ml/* call.
+    x_user_id: str = Header(alias="X-User-ID"),
+):
+    return run_prediction(model_id, req.data, x_user_id)
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

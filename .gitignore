@@ -5,6 +5,9 @@ todo list.txt
 # Node.js
 node_modules/
 npm-debug.log*
+# Vite's default build output. Nothing reads it from here - the Dockerfile builds its
+# own copy - so committing it would only ever mean stale bundles in review diffs.
+view-vite/dist/
 
 # Environment files (never commit secrets)
 .env
