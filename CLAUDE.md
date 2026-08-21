@@ -89,3 +89,8 @@ Secrets come from `.env`, which is gitignored and must never be committed.
 - Storage buckets are private. Files are read server-side with the service key;
   the browser gets a short-lived signed URL when it needs one.
 - No new dependency without a reason worth writing down.
+- **Check current docs before writing against a library API.** This repo pins
+  specific versions of Gin, FastAPI, supabase-py, scikit-learn, axios and Spring
+  Boot, and their surfaces move. When adding or changing a call into any of
+  them, consult Context7 for the current signature rather than relying on
+  recall. Skip it for code that only touches this repo's own functions.
